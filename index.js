@@ -548,9 +548,26 @@ app.delete("/api/bots/:id", apiErrorHandler(async (req, res) => {
 }));
 
 // --- [ 前端 UI ] ---
-// 页面从 public/index.html 读取 (重构: 不再内嵌 HTML)
+// 页面从 public/index.html 读取 (部署时必须保持 public/ 目录结构与 index.js 同级)
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+if (!fsSync.existsSync(INDEX_HTML)) {
+    console.error('============================================================');
+    console.error('❌ 缺少前端页面文件: public/index.html');
+    console.error('   请把 public/index.html 与 index.js 保持同级目录上传:');
+    console.error('     index.js');
+    console.error('     package.json');
+    console.error('     public/index.html   ← 必须在 public 文件夹内');
+    console.error('   程序继续启动, 但首页将无法打开 (API 正常可用)');
+    console.error('============================================================');
+}
 app.get('/', (req, res) => {
+    if (!fsSync.existsSync(INDEX_HTML)) {
+        return res.status(500).send(
+            '<h2>缺少 public/index.html</h2>' +
+            '<p>请把 <code>public/index.html</code> 与 <code>index.js</code> 同级上传后重启进程。</p>' +
+            '<p>详见 README「纯上传部署」章节。</p>'
+        );
+    }
     res.sendFile(INDEX_HTML);
 });
 

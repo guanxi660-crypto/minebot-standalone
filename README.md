@@ -78,6 +78,28 @@ http://<服务器IP>:4681
 
 默认登录：**admin / admin123**（**务必修改，见下文「安全」**）
 
+### 方式三：纯上传部署（青龙/翼龙等只能传文件的平台）
+
+无法 git clone 的平台（Pterodactyl 面板、部分青龙容器），从仓库手动下载以下 **3 个文件**：
+
+```
+├── index.js               # 主程序
+├── package.json           # 依赖清单 (可选带 package-lock.json)
+└── public/index.html      # 前端页面 ← 必须放在 public 文件夹内!
+```
+
+**⚠️ 最常见的失败原因**：只传了 `index.js` 和 `package.json`，漏掉 `public/index.html`，或没建 `public` 文件夹 —— 页面会打不开（程序会打印明确提示）。三个文件必须按上面的目录结构摆放，`public/index.html` 与 `index.js` 同级。
+
+上传后在平台控制台执行：
+
+```bash
+cd /home/container          # 按平台实际根目录调整
+npm install --omit=dev
+node index.js
+```
+
+> 缺 `public/index.html` 时程序仍会启动（API 正常），但首页显示 500 提示补传文件。
+
 ---
 
 ## 🛠️ 配置说明
