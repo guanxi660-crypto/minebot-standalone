@@ -2,7 +2,7 @@
   "name": "minebot-deploy",
   "version": "1.0.0",
   "private": true,
-  "description": "MineCraft Bot Assistant - standalone deploy (Pathfinder PRO)",
+  "description": "MineCraft Bot Assistant - standalone deploy (mineplayer-bot-node)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

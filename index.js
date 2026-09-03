@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * MineBot Standalone (Pathfinder PRO 单文件版)
+ * MineBot Standalone (mineplayer-bot-node 单文件版)
  * ============================================================
  * 基于 mineflayer 的 Minecraft 挂机机器人单文件版:
  *   - 内嵌 Web 控制面板 + 登录鉴权 (admin/admin123, 可用环境变量修改)
@@ -576,7 +576,7 @@ app.get('/', (req, res) => {
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4681;
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`=========================================`);
-    console.log(`Pathfinder PRO 已启动 (优雅关闭版)`);
+    console.log(`mineplayer-bot-node 已启动 (优雅关闭版)`);
     console.log(`端口: ${PORT} | 内存管理已激活`);
     console.log(`=========================================`);
     if (fsSync.existsSync(CONFIG_FILE)) {

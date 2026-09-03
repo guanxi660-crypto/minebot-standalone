@@ -1,7 +1,7 @@
     <!DOCTYPE html>
     <html>
     <head>
-        <meta charset="utf-8"><title>Pathfinder PRO</title>
+        <meta charset="utf-8"><title>mineplayer-bot-node</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
@@ -20,7 +20,7 @@
     <body class="p-6 pb-24">
         <div id="login-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 hidden">
             <div class="glass rounded-3xl p-8 w-80 border-t-4 border-t-blue-500">
-                <h2 class="text-xl font-black mb-1">Pathfinder PRO</h2>
+                <h2 class="text-xl font-black mb-1">mineplayer-bot-node</h2>
                 <p class="text-[10px] text-slate-500 uppercase font-black mb-6">身份验证</p>
                 <input id="login-user" placeholder="用户名" class="w-full bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 mb-2">
                 <input id="login-pass" type="password" placeholder="密码" class="w-full bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 mb-4" onkeydown="if(event.key==='Enter')doLogin()">
@@ -30,7 +30,7 @@
         </div>
         <div class="max-w-7xl mx-auto">
             <header class="flex justify-between items-center mb-8">
-                <h1 class="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent uppercase tracking-tighter">Pathfinder PRO</h1>
+                <h1 class="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent uppercase tracking-tighter">mineplayer-bot-node</h1>
                 <div class="glass p-2 rounded-2xl flex gap-2">
                     <input id="h" oninput="saveDraft('global', 'h', this.value)" placeholder="IP:PORT" class="bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700">
                     <input id="u" oninput="saveDraft('global', 'u', this.value)" placeholder="角色名" class="bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 w-32">
