@@ -1,8 +1,8 @@
 # MineBot Standalone (Pathfinder PRO)
 
-**MineCraft 挂机机器人单文件版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，单文件免构建、内置登录鉴权、带 Web 控制面板。
+**MineCraft 挂机机器人轻量版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，免构建、内置登录鉴权、带 Web 控制面板。
 
-> 本仓库是 [debbide/minebot](https://github.com/debbide/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（Pathfinder PRO）并修复了部署问题、**新增面板登录鉴权**，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
+> 本仓库是 [debbide/minebot](https://github.com/debbide/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（Pathfinder PRO）重构——修复部署问题、**新增面板登录鉴权**、抽出内嵌 HTML，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
 
 ---
 
@@ -22,9 +22,9 @@
 
 ## 🆚 与原版完整版（server/ 目录）的区别
 
-| | 本仓库（单文件版） | 原版完整版 |
+| | 本仓库（轻量版） | 原版完整版 |
 |---|---|---|
-| 前端 | 内嵌 HTML，免构建 | React，需 `npm run build` |
+| 前端 | 独立静态页 `public/index.html`，免构建 | React，需 `npm run build` |
 | 依赖 | 8 个 | 20+ 个 |
 | 启动 | `node index.js` | `cd server && npm install && npm start` |
 | 适合 | 青龙面板 / 受限容器 / 快速部署 | Docker 全家桶 / 功能全开 |
@@ -145,13 +145,16 @@ docker run -d --name minebot -p 4681:4681 -v $PWD:/app \
 ## 📁 文件结构
 
 ```
-├── index.js               # 主程序（单文件：Web 面板 + API + 机器人管理）
+├── index.js               # 主程序（后端：API + 机器人管理 + 登录鉴权）
+├── public/index.html      # Web 控制面板前端（登录 + 管理界面）
 ├── package.json           # 依赖清单（8 个运行时依赖）
 ├── ecosystem.config.cjs   # pm2 配置文件
 ├── install.sh             # 一键部署脚本
 ├── .env.example           # 环境变量模板
 └── bots_config.json       # （运行时自动生成）机器人配置持久化
 ```
+
+> 部署时 `public/` 目录必须与 `index.js` 保持同层级，缺了页面打不开。
 
 ## 🛡️ 安全提醒
 
@@ -175,4 +178,4 @@ MIT
 
 ## 🙏 致谢
 
-基于 [debbide/minebot](https://github.com/debbide/minebot)（Pathfinder PRO 单文件版）修改：修复 `"type": "module"` 冲突、补全 `ws` 依赖、支持 `.env` 加载、内存阈值可配置、新增面板登录鉴权。
+基于 [debbide/minebot](https://github.com/debbide/minebot)（Pathfinder PRO）修改：修复 `"type": "module"` 冲突、补全 `ws` 依赖、支持 `.env` 加载、内存阈值可配置、新增面板登录鉴权、抽出内嵌 HTML 为独立静态页。
