@@ -2,7 +2,7 @@
 
 **MineCraft 挂机机器人单文件版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，单文件免构建、内置登录鉴权、带 Web 控制面板。
 
-> 本仓库是 [jackieyiwu/minebot](https://github.com/jackieyiwu/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（Pathfinder PRO）并修复了部署问题、**新增面板登录鉴权**，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
+> 本仓库是 [debbide/minebot](https://github.com/debbide/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（Pathfinder PRO）并修复了部署问题、**新增面板登录鉴权**，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
 
 ---
 
@@ -175,4 +175,4 @@ MIT
 
 ## 🙏 致谢
 
-基于 [jackieyiwu/minebot](https://github.com/jackieyiwu/minebot)（Pathfinder PRO 单文件版）修改：修复 `"type": "module"` 冲突、补全 `ws` 依赖、支持 `.env` 加载、内存阈值可配置、新增面板登录鉴权。
+基于 [debbide/minebot](https://github.com/debbide/minebot)（Pathfinder PRO 单文件版）修改：修复 `"type": "module"` 冲突、补全 `ws` 依赖、支持 `.env` 加载、内存阈值可配置、新增面板登录鉴权。
