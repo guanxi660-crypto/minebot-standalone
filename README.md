@@ -2,7 +2,7 @@
 
 > **ℹ️ 两个分支：**
 > - **`main`（本分支）**：轻量版 —— 免构建、上传即跑，适合青龙/翼龙等受限平台
-> - **[`full-version` 分支](https://github.com/guanxi660-crypto/minebot-standalone/tree/full-version)**：完整版 —— React 前端 + AI 对话 + 自动续期 + 文件管理 + Telegram，功能全开
+> - **[`full-version` 分支](https://github.com/guanxi660-crypto/minebot-standalone/tree/full-version)**：完整版 —— React 前端 + AI 对话 + 自动续期 + 文件管理 + Telegram，功能全开。⚠️ **未经平台测试**，仅本地联调通过，部署遇到问题请优先用本分支（main）
 >
 > 按需选择分支下载部署。
 
