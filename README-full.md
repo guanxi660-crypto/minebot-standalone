@@ -1,5 +1,7 @@
 # mineplayer-bot-node · 完整版（full-version 分支）
 
+> ⚠️ **未经平台测试**：本分支仅在本地环境联调通过，未在青龙/Pterodactyl/VPS 等实际部署平台验证。若部署遇到问题，优先使用 **main 分支**（轻量版，已实测稳定）。欢迎提交 Issue 反馈问题。
+
 **MineCraft 挂机机器人完整版** —— React 前端 + Node 后端，含 AI 对话（!ask）、自动喊话设置、自动续期、面板登录、文件管理、Telegram 通知。
 
 > 本分支基于 [debbide/minebot](https://github.com/debbide/minebot) 完整版（server/ + React 前端）修复构建与部署问题。轻量版（单文件）见 **main 分支**。
