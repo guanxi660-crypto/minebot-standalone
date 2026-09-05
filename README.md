@@ -1,5 +1,11 @@
 # MineBot Standalone (mineplayer-bot-node)
 
+> **ℹ️ 两个分支：**
+> - **`main`（本分支）**：轻量版 —— 免构建、上传即跑，适合青龙/翼龙等受限平台
+> - **[`full-version` 分支](https://github.com/guanxi660-crypto/minebot-standalone/tree/full-version)**：完整版 —— React 前端 + AI 对话 + 自动续期 + 文件管理 + Telegram，功能全开
+>
+> 按需选择分支下载部署。
+
 **MineCraft 挂机机器人轻量版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，免构建、内置登录鉴权、带 Web 控制面板。
 
 > 本仓库是 [debbide/minebot](https://github.com/debbide/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（mineplayer-bot-node）重构——修复部署问题、**新增面板登录鉴权**、抽出内嵌 HTML，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
