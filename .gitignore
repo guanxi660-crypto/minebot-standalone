@@ -1,0 +1,23 @@
+# 依赖与运行时
+node_modules/
+server/node_modules/
+
+# 环境变量 (含密码!)
+.env
+server/.env
+
+# 运行时数据 (密钥/配置/审计日志 - 严禁提交!)
+server/data/
+data/
+
+# 日志
+*.log
+logs/
+server/logs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 本地测试产物
+.tmp/
