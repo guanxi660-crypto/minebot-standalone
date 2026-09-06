@@ -111,6 +111,7 @@
 
             async function addBot() { await fetch('/api/bots', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ host: document.getElementById('h').value, username: document.getElementById('u').value })}); drafts['global'] = {}; updateUI(true); }
             async function restartNow(id) { const r = await fetch('/api/bots/'+id+'/restart-now', { method: 'POST' }); if(r.ok) updateUI(true); }
+            async function reconnectBot(id) { const r = await fetch('/api/bots/'+id+'/reconnect', { method: 'POST' }); if(r.ok) updateUI(true); }
             async function savePto(id) { const data = { url: document.getElementById('url-'+id).value, id: document.getElementById('sid-'+id).value, key: document.getElementById('key-'+id).value, defaultDir: document.getElementById('ddir-'+id).value }; await fetch('/api/bots/'+id+'/pto-config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); delete drafts[id]; updateUI(true); }
             async function toggle(id, type) { await fetch('/api/bots/'+id+'/toggle', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type })}); updateUI(true); }
             async function setTimer(id, value, unit) { await fetch('/api/bots/'+id+'/set-timer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ value, unit })}); updateUI(true); }
@@ -133,7 +134,10 @@
                                 <div><input oninput="saveDraft('${b.id}', 'min', this.value)" id="min-${b.id}" value="${getDraft(b.id, 'min', '')}" type="number" placeholder="分钟" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[10px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('min-${b.id}').value, 'min')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[8px] font-black">设定分钟</button></div>
                                 <div><input oninput="saveDraft('${b.id}', 'hour', this.value)" id="hour-${b.id}" value="${getDraft(b.id, 'hour', '')}" type="number" placeholder="小时" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[10px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('hour-${b.id}').value, 'hour')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[8px] font-black">设定小时</button></div>
                             </div>
-                            <button onclick="restartNow('${b.id}')" class="w-full bg-red-600 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">⚡ 立即重启 /RESTART</button>
+                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                <button onclick="reconnectBot('${b.id}')" class="w-full bg-blue-600 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">🔁 手动重连</button>
+                                <button onclick="restartNow('${b.id}')" class="w-full bg-red-600 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">⚡ 立即重启 /RESTART</button>
+                            </div>
                         </div>
                         <div class="bg-black/40 p-4 rounded-2xl mb-4 border border-slate-800">
                             <input oninput="saveDraft('${b.id}', 'url', this.value)" id="url-${b.id}" placeholder="面板地址" value="${getDraft(b.id, 'url', b.settings.pterodactyl?.url)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[10px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">

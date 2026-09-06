@@ -497,6 +497,32 @@ app.post("/api/bots/:id/restart-now", apiErrorHandler(async (req, res) => {
     res.json({ success: true, message: '重启命令已发送' });
 }));
 
+app.post("/api/bots/:id/reconnect", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+
+    // 强制断开当前连接, 立即重连 (不走自动重连的延迟)
+    bot.isRepairing = false; // 允许立即重连
+    if (bot.instance) {
+        bot.instance.removeAllListeners();
+        try { bot.instance.end(); } catch (e) {}
+        bot.instance = null;
+    }
+    if (bot.afkTimer) clearInterval(bot.afkTimer);
+
+    bot.status = "重连中";
+    bot.pushLog(`🔁 手动重连: 正在重新连接...`, 'text-blue-400 font-bold');
+    broadcastBotUpdate(req.params.id, bot);
+
+    // 立即重建连接
+    setTimeout(() => {
+        if (!activeBots.has(req.params.id)) return;
+        bot.isRepairing = false;
+        createSmartBot(req.params.id, bot.targetHost, bot.targetPort, bot.username, bot.logs, bot.settings);
+    }, 1000);
+
+    res.json({ success: true, message: '正在重连' });
+}));
+
 app.post("/api/bots/:id/set-timer", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
     const value = validateNumber(req.body.value, '时间值', 0, 10080);
