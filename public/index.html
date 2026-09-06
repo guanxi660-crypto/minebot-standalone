@@ -125,7 +125,7 @@
                 document.getElementById('list').innerHTML = d.bots.map(b => `
                     <div class="glass rounded-[2.5rem] p-6 border-t-4 transition-all ${b.status==='在线'?'border-t-emerald-500 shadow-[0_-10px_30px_-15px_rgba(16,185,129,0.2)]':'border-t-red-500 shadow-[0_-10px_30px_-15px_rgba(239,68,68,0.2)]'}">
                         <div class="flex justify-between items-start mb-4">
-                            <div><div class="flex items-center gap-2"><h3 class="text-lg font-bold uppercase">${b.username}</h3><span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${b.status==='在线'?'bg-emerald-500/20 text-emerald-400':'bg-red-500/20 text-red-400'}"><span class="status-dot ${b.status==='在线'?'online':'offline'}"></span>${b.status}</span></div><p class="text-[10px] text-slate-500">${b.host}</p></div>
+                            <div><div class="flex items-center gap-2"><h3 class="text-lg font-bold uppercase">${b.username}</h3><span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${b.status==='在线'?'bg-emerald-500/20 text-emerald-400':'bg-red-500/20 text-red-400'}"><span class="status-dot ${b.status==='在线'?'online':'offline'}"></span>${b.status}</span></div><p class="text-[10px] text-slate-500">${b.host} <span class="ml-2 text-cyan-400 font-bold">👥 ${b.playerCount ?? 0} 人</span></p></div>
                             <button onclick="removeBot('${b.id}')" class="text-slate-600 hover:text-red-500 transition-colors">✕</button>
                         </div>
                         <div class="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 mb-4">

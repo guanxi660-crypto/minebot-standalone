@@ -77,6 +77,7 @@ function broadcastBotUpdate(botId, bot) {
         status: bot.status,
         logs: bot.logs,
         settings: bot.settings,
+        playerCount: bot.playerCount,
         nextRestart: bot.settings.restartInterval > 0 ? new Date(bot.lastRestartTick + bot.settings.restartInterval * 60000).toLocaleTimeString() : '未开启'
     });
 }
@@ -299,7 +300,7 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
     }
 
     const defaultSettings = { walk: false, ai: true, chat: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
-    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false };
+    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0 };
     activeBots.set(id, botMeta);
 
     const pushLog = (msg, colorClass = '') => {
@@ -319,6 +320,7 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
         bot.once('spawn', () => {
             botMeta.status = "在线";
             botMeta.centerPos = bot.entity.position.clone();
+            botMeta.playerCount = Object.keys(bot.players).length || 0;
             pushLog(`✅ 成功进入服务器`, 'text-emerald-400 font-bold');
             broadcastBotUpdate(id, botMeta);
             
@@ -335,6 +337,12 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
             if (botMeta.afkTimer) clearInterval(botMeta.afkTimer);
             botMeta.afkTimer = setInterval(() => {
                 if (!bot.entity) return;
+                // 刷新同服务器玩家数量 (含 bot 自身)
+                const pc = Object.keys(bot.players).length || 0;
+                if (pc !== botMeta.playerCount) {
+                    botMeta.playerCount = pc;
+                    broadcastBotUpdate(id, botMeta);
+                }
                 // 重启逻辑
                 if (botMeta.settings.restartInterval > 0 && (Date.now() - botMeta.lastRestartTick) / 60000 >= botMeta.settings.restartInterval) {
                     bot.chat('/restart'); botMeta.lastRestartTick = Date.now(); pushLog(`⏰ 周期任务: 执行 /restart`, 'text-red-500 font-bold');
@@ -435,6 +443,7 @@ app.get("/api/bots", (req, res) => {
             status: b.status,
             logs: b.logs,
             settings: b.settings,
+            playerCount: b.playerCount,
             nextRestart: b.settings.restartInterval > 0 ? new Date(b.lastRestartTick + b.settings.restartInterval * 60000).toLocaleTimeString() : '未开启'
         }));
         res.json({ success: true, bots });
