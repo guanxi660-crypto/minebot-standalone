@@ -122,11 +122,52 @@ const RECONNECT_DELAY = 10 * 1000; // 断线重连延迟 (ms)
 const BOT_ACTION_INTERVAL = 8 * 1000; // 机器人行为 tick (巡逻/喊话/AI视角)
 const CONNECT_TIMEOUT = 20 * 1000; // 服务器连接超时 (ms)
 const PATROL_RANDOM_THRESHOLD = 0.7; // 巡逻触发随机阈值
-const CHAT_RANDOM_THRESHOLD = 0.85; // 喊话触发随机阈值
+const CHAT_RANDOM_THRESHOLD = 0.92; // 喊话触发随机阈值 (越高越不常触发)
+const CHAT_COOLDOWN_MS = 90 * 1000; // 喊话冷却时间 (90秒内不重复发言)
 const MEMORY_HIGH_PERCENT = 80;    // 内存高水位: 触发日志裁剪
 const SHUTDOWN_MEMORY_PERCENT = parseFloat(process.env.MEMORY_MAX_PERCENT) || 90; // 优雅关闭阈值 (0=禁用)
 const SHUTDOWN_ON_EXCEPTION_PERCENT = 85; // 未捕获异常且内存超此值时关闭
 let isShuttingDown = false;
+
+// --- [ 拟人喊话生成器 ] ---
+// 按场景选词库 + RP括号动作 + 随机emoji/大小写变体, 让 bot 发言更像真人
+const CHAT_ACTIONS = ['(yawns)', '(stretches)', '(looks around)', '(nods)', '(waves)', '(sighs)', '(shrugs)', '(checks the time)', '(leans back)', '(taps fingers)'];
+const CHAT_SOCIAL = [
+    'anyone here?', 'yo', 'sup everyone', 'hey guys', 'hello?', 'gl all',
+    'nice server', 'gg', 'lol', 'wow this place is cool', 'been playing long?',
+    'anyone up for a build trade?', 'pretty chill here', 'good vibes today'
+];
+const CHAT_SOLO = [
+    'quiet today...', 'zzz...', 'just vibing', 'nice spot', 'this base is cool',
+    'should i build something here...', 'alright, time to grind', 'peaceful',
+    'sun looks nice in here', 'gonna afk for a bit', 'such a chill place to hang'
+];
+const CHAT_EMOJI = [' :)', ' :D', ' ;)', ' ^^', ' o/', ' <3', ' :p', ' :3', ' \\(^-^)/', ''];
+const CHAT_PUNCT = ['', '', '!', '...', '~'];
+
+function generateChatMessage(playerCount) {
+    // 服务器还有其他玩家(排除自己) -> 社交型, 否则自言自语
+    const pool = playerCount > 1 ? CHAT_SOCIAL : CHAT_SOLO;
+    let msg = pool[Math.floor(Math.random() * pool.length)];
+
+    // 40% 概率加 RP 括号动作 (前置)
+    if (Math.random() < 0.4) {
+        msg = CHAT_ACTIONS[Math.floor(Math.random() * CHAT_ACTIONS.length)] + ' ' + msg;
+    }
+    // 30% 概率加 emoji (后置)
+    if (Math.random() < 0.3) {
+        msg += CHAT_EMOJI[Math.floor(Math.random() * CHAT_EMOJI.length)];
+    }
+    // 20% 概率改标点
+    if (Math.random() < 0.2 && !msg.endsWith(')')) {
+        msg = msg.replace(/[.!?~]+$/, '') + CHAT_PUNCT[Math.floor(Math.random() * CHAT_PUNCT.length)];
+    }
+    // 15% 概率整句小写 (更随意)
+    if (Math.random() < 0.15) {
+        msg = msg.toLowerCase();
+    }
+    return msg;
+}
 
 app.use(express.json());
 
@@ -300,7 +341,7 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
     }
 
     const defaultSettings = { walk: false, ai: true, chat: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
-    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0 };
+    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
     activeBots.set(id, botMeta);
 
     const pushLog = (msg, colorClass = '') => {
@@ -359,10 +400,10 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
                     pushLog(`👣 巡逻: 前往点 [${Math.round(targetPos.x)}, ${Math.round(targetPos.z)}]`, 'text-emerald-500');
                     bot.pathfinder.setGoal(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1));
                 }
-                // 喊话
-                if (botMeta.settings.chat && Math.random() > CHAT_RANDOM_THRESHOLD) {
-                    const words = ["有人吗", "2333", "啧", "掛机中"];
-                    const m = words[Math.floor(Math.random() * words.length)];
+                // 喊话 (冷却90秒 + 随机触发 + 拟人化内容)
+                if (botMeta.settings.chat && (Date.now() - botMeta.lastChatTick) >= CHAT_COOLDOWN_MS && Math.random() > CHAT_RANDOM_THRESHOLD) {
+                    const m = generateChatMessage(Object.keys(bot.players).length || 0);
+                    botMeta.lastChatTick = Date.now();
                     bot.chat(m); pushLog(`💬 拟人发话: ${m}`, 'text-orange-400');
                 }
             }, BOT_ACTION_INTERVAL);
