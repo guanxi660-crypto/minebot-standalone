@@ -72,6 +72,7 @@ function broadcastBotUpdate(botId, bot) {
     broadcastToClients('bot_update', {
         id: botId,
         username: bot.username,
+        note: bot.note,
         host: bot.targetHost,
         port: bot.targetPort,
         status: bot.status,
@@ -325,8 +326,8 @@ setInterval(async () => {
 async function saveBotsConfig() {
     try {
         const config = Array.from(activeBots.values()).map(b => ({
-            host: b.targetHost, port: b.targetPort, username: b.username, 
-            settings: b.settings, logs: b.logs.slice(0, LOG_LIMIT) 
+            host: b.targetHost, port: b.targetPort, username: b.username,
+            settings: { ...b.settings, note: b.note }, logs: b.logs.slice(0, LOG_LIMIT) 
         }));
         await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
     } catch (err) {}
@@ -341,7 +342,8 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
     }
 
     const defaultSettings = { walk: false, ai: true, chat: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
-    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
+    const note = (settings && settings.note) || username;
+    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, note, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
     activeBots.set(id, botMeta);
 
     const pushLog = (msg, colorClass = '') => {
@@ -479,6 +481,7 @@ app.get("/api/bots", (req, res) => {
         const bots = Array.from(activeBots.values()).map(b => ({
             id: b.id,
             username: b.username,
+        note: b.note,
             host: b.targetHost,
             port: b.targetPort,
             status: b.status,
@@ -611,6 +614,153 @@ app.post("/api/bots/:id/pto-config", apiErrorHandler(async (req, res) => {
     res.json({ success: true, message: '配置已保存' });
 }));
 
+// --- [ 自定义备注 ] ---
+// 保存 bot 显示名称/备注 (默认取游戏ID, 可自定义)
+app.post("/api/bots/:id/note", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const note = (req.body.note || "").trim().slice(0, 30);
+    bot.note = note || bot.username;
+    bot.pushLog(`🏷️ 备注更新: ${bot.note}`, 'text-purple-300');
+    await saveBotsConfig();
+    broadcastBotUpdate(req.params.id, bot);
+    res.json({ success: true, note: bot.note });
+}));
+
+// --- [ 翼龙面板 API 工具函数 ] ---
+// 校验并返回翼龙面板请求配置
+function getPtero(bot) {
+    const p = bot.settings.pterodactyl || { url: '', key: '', id: '' };
+    if (!p.url || !p.key || !p.id) {
+        const err = new Error('翼龙面板未配置 (地址/Key/服务器ID)');
+        err.status = 400;
+        throw err;
+    }
+    return {
+        url: p.url,
+        headers: {
+            'Authorization': 'Bearer ' + p.key,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        },
+        serverId: p.id
+    };
+}
+
+// --- [ 翼龙连接测试 ] ---
+// 测试 URL/Key/服务器ID 是否有效
+app.post("/api/bots/:id/test-panel", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const p = getPtero(bot);
+    const ep = `${p.url}/api/client/servers/${p.serverId}`;
+    try {
+        const r = await axios.get(ep, { headers: p.headers, timeout: 8000 });
+        const srv = r.data.attributes;
+        bot.pushLog(`🔌 面板连接成功: ${srv.name} (${srv.status})`, 'text-emerald-400 font-bold');
+        res.json({ success: true, name: srv.name, status: srv.status, identifier: srv.identifier });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}: ${e.response.data?.errors?.[0]?.detail || e.response.data?.errors?.[0]?.code || '请求失败'}` : e.message;
+        bot.pushLog(`🔌 面板连接失败: ${msg}`, 'text-red-400');
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+// --- [ 翼龙电源控制 ] ---
+// signal: start | stop | restart | kill
+app.post("/api/bots/:id/power", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const signal = req.body.signal;
+    if (!['start', 'stop', 'restart', 'kill'].includes(signal)) {
+        throw { status: 400, message: '无效的电源操作 (start/stop/restart/kill)' };
+    }
+    const p = getPtero(bot);
+    const ep = `${p.url}/api/client/servers/${p.serverId}/power`;
+    try {
+        await axios.post(ep, { signal }, { headers: p.headers, timeout: 8000 });
+        const map = { start: '启动', stop: '停止', restart: '重启', kill: '强杀' };
+        bot.pushLog(`⏻ 电源: 已发送 ${map[signal]}`, 'text-yellow-400 font-bold');
+        res.json({ success: true, message: `已发送 ${signal}` });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        bot.pushLog(`⏻ 电源失败: ${msg}`, 'text-red-400');
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+// --- [ 翼龙文件列表 ] ---
+// 列出服务器指定目录文件
+app.get("/api/bots/:id/files", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const p = getPtero(bot);
+    const dir = req.query.dir || bot.settings.pterodactyl.defaultDir || '/';
+    const ep = `${p.url}/api/client/servers/${p.serverId}/files/list?directory=${encodeURIComponent(dir)}`;
+    try {
+        const r = await axios.get(ep, { headers: p.headers, timeout: 8000 });
+        res.json({ success: true, files: r.data.data || [] });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+// --- [ 翼龙文件上传 ] ---
+// 上传文件到服务器 (multipart, 字段名 file, 参数 directory)
+app.post("/api/bots/:id/upload", upload.single('file'), apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    if (!req.file) throw { status: 400, message: '未收到文件' };
+    const p = getPtero(bot);
+    const dir = req.body.directory || bot.settings.pterodactyl.defaultDir || '/';
+    // 翼龙需要先创建 upload url
+    try {
+        const up = await axios.post(`${p.url}/api/client/servers/${p.serverId}/files/upload`, {}, { headers: p.headers, timeout: 8000 });
+        const uploadUrl = up.data.attributes.url;
+        // 预签名 URL: 直接 PUT 文件字节
+        await axios.put(uploadUrl, req.file.buffer, { timeout: 20000 });
+        // 上传完成后刷新文件列表
+        await axios.get(`${p.url}/api/client/servers/${p.serverId}/files/list?directory=${encodeURIComponent(dir)}`, { headers: p.headers, timeout: 8000 });
+        bot.pushLog(`📤 文件上传: ${req.file.originalname}`, 'text-emerald-400');
+        res.json({ success: true, message: '已上传 ' + req.file.originalname });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        bot.pushLog(`📤 上传失败: ${msg}`, 'text-red-400');
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+// --- [ 翼龙文件删除 ] ---
+// 删除服务器文件
+app.post("/api/bots/:id/files/delete", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const p = getPtero(bot);
+    const file = req.body.file;
+    if (!file) throw { status: 400, message: '缺少文件路径' };
+    try {
+        await axios.post(`${p.url}/api/client/servers/${p.serverId}/files/delete`, { files: [file] }, { headers: p.headers, timeout: 8000 });
+        bot.pushLog(`🗑️ 删除文件: ${file}`, 'text-red-300');
+        res.json({ success: true });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+// --- [ 翼龙文件下载 ] ---
+// 生成文件下载链接 (翼龙返回临时 url)
+app.post("/api/bots/:id/download", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const p = getPtero(bot);
+    const file = req.body.file;
+    if (!file) throw { status: 400, message: '缺少文件路径' };
+    try {
+        const r = await axios.post(`${p.url}/api/client/servers/${p.serverId}/files/download`, { file }, { headers: p.headers, timeout: 8000 });
+        res.json({ success: true, url: r.data.attributes.url });
+    } catch (e) {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        res.status(502).json({ success: false, error: msg });
+    }
+}));
+
+
+
 app.delete("/api/bots/:id", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
 
@@ -702,6 +852,7 @@ wss.on('connection', (ws) => {
                 data: {
                     id,
                     username: bot.username,
+        note: bot.note,
                     host: bot.targetHost,
                     port: bot.targetPort,
                     status: bot.status,
