@@ -8,7 +8,7 @@
 
 **MineCraft 挂机机器人轻量版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，免构建、内置登录鉴权、带 Web 控制面板。
 
-> 本仓库是 [debbide/minebot](https://github.com/debbide/minebot) 的**轻量部署分支（方案 B）**：取根目录单文件版（mineplayer-bot-node）重构——修复部署问题、**新增面板登录鉴权**、抽出内嵌 HTML，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
+> 本仓库从 [debbide/minebot](https://github.com/debbide/minebot) 重构而来：保留根目录单文件版（mineplayer-bot-node）并解决部署问题、**新增面板登录鉴权**、抽出内嵌 HTML 为独立前端，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
 
 ---
 
@@ -44,7 +44,7 @@
 ### 环境要求
 
 - Node.js **>= 18**（mineflayer 要求）
-- 可访问的 Minecraft 服务器（离线模式 `auth: offline`）
+- 一台 Minecraft 服务器：需将服务器配置文件 `server.properties` 中的 `online_mode` 设为 `false`（离线模式），否则机器人无法以 `auth: offline` 方式登录
 
 ### 方式一：一键部署脚本（推荐）
 
