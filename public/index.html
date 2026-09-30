@@ -119,14 +119,34 @@
             async function saveNote(id) { const v = document.getElementById('note-'+id).value.trim(); const r = await fetch('/api/bots/'+id+'/note', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({note: v}) }); delete drafts[id]; updateUI(true); }
             async function testPanel(id) { const r = await fetch('/api/bots/'+id+'/test-panel', { method: 'POST' }); const d = await r.json(); alert(d.success ? ('✅ 连接成功: ' + d.name + ' (' + d.status + ')') : ('❌ ' + (d.error||'失败'))); updateUI(true); }
             async function pteroPower(id, signal) { await fetch('/api/bots/'+id+'/power', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({signal}) }); updateUI(true); }
-            async function openFiles(id) { const r = await fetch('/api/bots/'+id+'/files?dir=/'); const d = await r.json(); if(!d.success){alert('❌ '+d.error);return;} const list = d.files.map(f => { const a=f.attributes; const icon=a.is_file?'📄':'📁'; const sz=a.is_file?(a.size/1024).toFixed(0)+'KB':'dir'; return '<div class="flex justify-between items-center py-1 border-b border-slate-800"><span class="text-[10px]">'+icon+' '+a.name+' <span class="text-slate-500">('+sz+')</span></span>'+ (a.is_file?'<div class="flex gap-1"><button onclick="downFile(''+id+'','/'+a.name+'')" class="bg-blue-600 px-2 py-0.5 rounded text-[8px]">下载</button><button onclick="delFile(''+id+'','/'+a.name+'')" class="bg-red-600 px-2 py-0.5 rounded text-[8px]">删除</button></div>':'') + '</div>'; }).join('');
-                const panel = document.getElementById('file-modal'); if(!panel){const d2=document.createElement('div');d2.id='file-modal';d2.className='fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90';d2.innerHTML='<div class="glass rounded-3xl p-6 w-[90%] max-w-xl"><h2 class="text-lg font-bold mb-3">📁 文件管理 - '+document.getElementById('note-'+id).value+'</h2><div id="file-body" class="max-h-80 overflow-y-auto"></div><div class="mt-4 flex gap-2"><input type="file" id="upload-file" class="text-[10px]"><button onclick="upFile(''+id+'')" class="bg-emerald-600 px-3 py-1 rounded text-[10px]">上传</button><button onclick="document.getElementById('file-modal').remove()" class="bg-slate-700 px-3 py-1 rounded text-[10px]">关闭</button></div></div>';document.body.appendChild(d2);}
-                document.getElementById('file-body').innerHTML = list; }
+                        async function openFiles(id) {
+                const r = await fetch('/api/bots/'+id+'/files?dir=/');
+                const d = await r.json();
+                if(!d.success){ alert('❌ '+d.error); return; }
+                const list = d.files.map(f => {
+                    const a = f.attributes;
+                    const icon = a.is_file ? '📄' : '📁';
+                    const sz = a.is_file ? (a.size/1024).toFixed(0)+'KB' : 'dir';
+                    const nameEsc = a.name.replace(/'/g, "\'");
+                    const dlBtn = a.is_file
+                        ? `<button onclick="downFile('${id}','${nameEsc}')" class="bg-blue-600 px-2 py-0.5 rounded text-[8px]">下载</button><button onclick="delFile('${id}','${nameEsc}')" class="bg-red-600 px-2 py-0.5 rounded text-[8px]">删除</button>`
+                        : '';
+                    return `<div class="flex justify-between items-center py-1 border-b border-slate-800"><span class="text-[10px]">${icon} ${a.name} <span class="text-slate-500">(${sz})</span></span><div class="flex gap-1">${dlBtn}</div></div>`;
+                }).join('');
+                const panel = document.getElementById('file-modal');
+                if(!panel){
+                    const d2 = document.createElement('div');
+                    d2.id = 'file-modal';
+                    d2.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90';
+                    d2.innerHTML = `<div class="glass rounded-3xl p-6 w-[90%] max-w-xl"><h2 class="text-lg font-bold mb-3">📁 文件管理</h2><div id="file-body" class="max-h-80 overflow-y-auto"></div><div class="mt-4 flex gap-2"><input type="file" id="upload-file" class="text-[10px]"><button onclick="upFile('${id}')" class="bg-emerald-600 px-3 py-1 rounded text-[10px]">上传</button><button onclick="document.getElementById('file-modal').remove()" class="bg-slate-700 px-3 py-1 rounded text-[10px]">关闭</button></div></div>`;
+                    document.body.appendChild(d2);
+                }
+                document.getElementById('file-body').innerHTML = list;
+            }
             async function downFile(id, file) { await fetch('/api/bots/'+id+'/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({file}) }); }
             async function delFile(id, file) { if(confirm('删除 '+file+'?')){ const r=await fetch('/api/bots/'+id+'/files/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file})}); if(r.ok) openFiles(id); } }
             async function upFile(id) { const inp=document.getElementById('upload-file'); if(!inp.files.length){alert('请选择文件');return;} const fd=new FormData(); fd.append('file',inp.files[0]); fd.append('directory','/'); const r=await fetch('/api/bots/'+id+'/upload',{method:'POST',body:fd}); const d=await r.json(); alert(d.success?'✅ 已上传':('❌ '+d.error)); openFiles(id); }
-            
-            async function updateUI(force = false) {
+async function updateUI(force = false) {
                 if (!force && document.activeElement && document.activeElement.tagName === 'INPUT') return;
                 const r = await fetch('/api/bots'); const d = await r.json();
                 document.getElementById('h').value = getDraft('global', 'h', document.getElementById('h').value);
