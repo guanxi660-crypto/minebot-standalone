@@ -620,6 +620,9 @@ app.post("/api/bots/:id/note", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
     const note = (req.body.note || "").trim().slice(0, 30);
     bot.note = note || bot.username;
+    // 关键: 同步写入 settings.note, 重连/重启后 createSmartBot
+    // 才能从 settings.note 恢复自定义名称 (否则退回 username)
+    bot.settings.note = note || bot.username;
     bot.pushLog(`🏷️ 备注更新: ${bot.note}`, 'text-purple-300');
     await saveBotsConfig();
     broadcastBotUpdate(req.params.id, bot);
