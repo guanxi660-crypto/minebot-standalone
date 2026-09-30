@@ -21,21 +21,21 @@
         <div id="login-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 hidden">
             <div class="glass rounded-3xl p-8 w-80 border-t-4 border-t-blue-500">
                 <h2 class="text-xl font-black mb-1">mineplayer-bot-node</h2>
-                <p class="text-[10px] text-slate-500 uppercase font-black mb-6">身份验证</p>
+                <p class="text-[11px] text-slate-500 uppercase font-black mb-6">身份验证</p>
                 <input id="login-user" placeholder="用户名" class="w-full bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 mb-2">
                 <input id="login-pass" type="password" placeholder="密码" class="w-full bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 mb-4" onkeydown="if(event.key==='Enter')doLogin()">
-                <div id="login-err" class="text-red-500 text-[10px] font-bold mb-2 hidden">登录失败</div>
+                <div id="login-err" class="text-red-500 text-[11px] font-bold mb-2 hidden">登录失败</div>
                 <button onclick="doLogin()" class="w-full bg-blue-600 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all">登 录</button>
             </div>
         </div>
         <div class="max-w-7xl mx-auto">
             <header class="flex justify-between items-center mb-8">
-                <h1 class="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent uppercase tracking-tighter">mineplayer-bot-node</h1>
+                <h1 class="text-xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent uppercase tracking-tighter">mineplayer-bot-node</h1>
                 <div class="glass p-2 rounded-2xl flex gap-2">
                     <input id="h" oninput="saveDraft('global', 'h', this.value)" placeholder="IP:PORT" class="bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700">
                     <input id="u" oninput="saveDraft('global', 'u', this.value)" placeholder="角色名" class="bg-slate-950 rounded-xl px-4 py-2 text-sm text-white outline-none border border-slate-700 w-32">
                     <button onclick="addBot()" class="bg-white text-black px-6 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all">部署角色</button>
-                    <button onclick="logout()" class="bg-slate-800 text-slate-300 px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all">退出</button>
+                    <button onclick="logout()" class="bg-slate-800 text-slate-300 px-3 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all">退出</button>
                 </div>
             </header>
             <div id="list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
@@ -43,10 +43,10 @@
 
         <div id="mem-bar" class="monitor-bar glass">
             <div class="flex flex-col">
-                <span class="text-[10px] uppercase font-black text-slate-500">Node Instance Memory</span>
+                <span class="text-[11px] uppercase font-black text-slate-500">Node Instance Memory</span>
                 <div class="flex items-baseline gap-2">
                     <span id="mem-percent" class="text-xl font-black italic text-white">0.0%</span>
-                    <span id="mem-used" class="text-[10px] font-bold text-slate-400">0 / 0 MB</span>
+                    <span id="mem-used" class="text-[11px] font-bold text-slate-400">0 / 0 MB</span>
                 </div>
             </div>
             <div class="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -129,16 +129,16 @@
                     const sz = a.is_file ? (a.size/1024).toFixed(0)+'KB' : 'dir';
                     const nameEsc = a.name.replace(/'/g, "\'");
                     const dlBtn = a.is_file
-                        ? `<button onclick="downFile('${id}','${nameEsc}')" class="bg-blue-600 px-2 py-0.5 rounded text-[8px]">下载</button><button onclick="delFile('${id}','${nameEsc}')" class="bg-red-600 px-2 py-0.5 rounded text-[8px]">删除</button>`
+                        ? `<button onclick="downFile('${id}','${nameEsc}')" class="bg-blue-600 px-2 py-0.5 rounded text-[11px]">下载</button><button onclick="delFile('${id}','${nameEsc}')" class="bg-red-600 px-2 py-0.5 rounded text-[11px]">删除</button>`
                         : '';
-                    return `<div class="flex justify-between items-center py-1 border-b border-slate-800"><span class="text-[10px]">${icon} ${a.name} <span class="text-slate-500">(${sz})</span></span><div class="flex gap-1">${dlBtn}</div></div>`;
+                    return `<div class="flex justify-between items-center py-1 border-b border-slate-800"><span class="text-[11px]">${icon} ${a.name} <span class="text-slate-500">(${sz})</span></span><div class="flex gap-1">${dlBtn}</div></div>`;
                 }).join('');
                 const panel = document.getElementById('file-modal');
                 if(!panel){
                     const d2 = document.createElement('div');
                     d2.id = 'file-modal';
                     d2.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90';
-                    d2.innerHTML = `<div class="glass rounded-3xl p-6 w-[90%] max-w-xl"><h2 class="text-lg font-bold mb-3">📁 文件管理</h2><div id="file-body" class="max-h-80 overflow-y-auto"></div><div class="mt-4 flex gap-2"><input type="file" id="upload-file" class="text-[10px]"><button onclick="upFile('${id}')" class="bg-emerald-600 px-3 py-1 rounded text-[10px]">上传</button><button onclick="document.getElementById('file-modal').remove()" class="bg-slate-700 px-3 py-1 rounded text-[10px]">关闭</button></div></div>`;
+                    d2.innerHTML = `<div class="glass rounded-3xl p-6 w-[90%] max-w-xl"><h2 class="text-lg font-bold mb-3">📁 文件管理</h2><div id="file-body" class="max-h-80 overflow-y-auto"></div><div class="mt-4 flex gap-2"><input type="file" id="upload-file" class="text-[11px]"><button onclick="upFile('${id}')" class="bg-emerald-600 px-3 py-1 rounded text-[11px]">上传</button><button onclick="document.getElementById('file-modal').remove()" class="bg-slate-700 px-3 py-1 rounded text-[11px]">关闭</button></div></div>`;
                     document.body.appendChild(d2);
                 }
                 document.getElementById('file-body').innerHTML = list;
@@ -154,38 +154,38 @@ async function updateUI(force = false) {
                 document.getElementById('list').innerHTML = d.bots.map(b => `
                     <div class="glass rounded-[2.5rem] p-6 border-t-4 transition-all ${b.status==='在线'?'border-t-emerald-500 shadow-[0_-10px_30px_-15px_rgba(16,185,129,0.2)]':'border-t-red-500 shadow-[0_-10px_30px_-15px_rgba(239,68,68,0.2)]'}">
                         <div class="flex justify-between items-start mb-4">
-                            <div><div class="flex items-center gap-2"><h3 class="text-2xl font-bold uppercase">${b.note || b.username}</h3><span class="text-xs text-slate-400 font-mono">(${b.username})</span><span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${b.status==='在线'?'bg-emerald-500/20 text-emerald-400':'bg-red-500/20 text-red-400'}"><span class="status-dot ${b.status==='在线'?'online':'offline'}"></span>${b.status}</span></div><p class="text-[10px] text-slate-500">${b.host}:${b.port || 25565} <span class="ml-2 text-cyan-400 font-bold">👥 ${b.playerCount ?? 0} 人</span></p></div>
+                            <div><div class="flex items-center gap-2"><h3 class="text-xl font-bold uppercase">${b.note || b.username}</h3><span class="text-sm text-slate-400 font-mono">(${b.username})</span><span class="px-2 py-0.5 rounded-full text-[11px] font-black uppercase ${b.status==='在线'?'bg-emerald-500/20 text-emerald-400':'bg-red-500/20 text-red-400'}"><span class="status-dot ${b.status==='在线'?'online':'offline'}"></span>${b.status}</span></div><p class="text-[11px] text-slate-500">${b.host}:${b.port || 25565} <span class="ml-2 text-cyan-400 font-bold">👥 ${b.playerCount ?? 0} 人</span></p></div>
                             <button onclick="removeBot('${b.id}')" class="text-slate-600 hover:text-red-500 transition-colors">✕</button>
                         </div>
                         <div class="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 mb-4">
-                            <p class="text-[9px] text-slate-500 uppercase font-black mb-3">定时重启 | 下次: <span class="text-cyan-400">${b.nextRestart}</span></p>
+                            <p class="text-[11px] text-slate-500 uppercase font-black mb-3">定时重启 | 下次: <span class="text-cyan-400">${b.nextRestart}</span></p>
                             <div class="grid grid-cols-2 gap-2 mb-3">
-                                <div><input oninput="saveDraft('${b.id}', 'min', this.value)" id="min-${b.id}" value="${getDraft(b.id, 'min', '')}" type="number" placeholder="分钟" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[10px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('min-${b.id}').value, 'min')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[8px] font-black">设定分钟</button></div>
-                                <div><input oninput="saveDraft('${b.id}', 'hour', this.value)" id="hour-${b.id}" value="${getDraft(b.id, 'hour', '')}" type="number" placeholder="小时" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[10px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('hour-${b.id}').value, 'hour')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[8px] font-black">设定小时</button></div>
+                                <div><input oninput="saveDraft('${b.id}', 'min', this.value)" id="min-${b.id}" value="${getDraft(b.id, 'min', '')}" type="number" placeholder="分钟" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[11px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('min-${b.id}').value, 'min')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[11px] font-black">设定分钟</button></div>
+                                <div><input oninput="saveDraft('${b.id}', 'hour', this.value)" id="hour-${b.id}" value="${getDraft(b.id, 'hour', '')}" type="number" placeholder="小时" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[11px] text-white outline-none border border-slate-800 transition-all"><button onclick="setTimer('${b.id}', document.getElementById('hour-${b.id}').value, 'hour')" class="mt-1 w-full bg-slate-800 py-1 rounded-md text-[11px] font-black">设定小时</button></div>
                             </div>
                             <div class="grid grid-cols-2 gap-2 mb-2">
-                                <button onclick="reconnectBot('${b.id}')" class="w-full bg-blue-600 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">🔁 手动重连</button>
-                                <button onclick="restartNow('${b.id}')" class="w-full bg-red-600 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">⚡ 立即重启 /RESTART</button>
+                                <button onclick="reconnectBot('${b.id}')" class="w-full bg-blue-600 py-2 rounded-xl text-[11px] font-black uppercase shadow-lg active:scale-95 transition-all">🔁 手动重连</button>
+                                <button onclick="restartNow('${b.id}')" class="w-full bg-red-600 py-2 rounded-xl text-[11px] font-black uppercase shadow-lg active:scale-95 transition-all">⚡ 立即重启 /RESTART</button>
                             </div>
                             <div class="flex gap-2 items-center">
-                                <input oninput="saveDraft('${b.id}','note',this.value)" id="note-${b.id}" value="${getDraft(b.id,'note', b.note || '')}" placeholder="服务器名称" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[10px] text-white outline-none border border-slate-800">
-                                <button onclick="saveNote('${b.id}')" class="bg-purple-600 px-3 py-1 rounded-lg text-[9px] font-black whitespace-nowrap">修改名称</button>
+                                <input oninput="saveDraft('${b.id}','note',this.value)" id="note-${b.id}" value="${getDraft(b.id,'note', b.note || '')}" placeholder="服务器名称" class="bg-slate-950 w-full rounded-lg px-2 py-1 text-[11px] text-white outline-none border border-slate-800">
+                                <button onclick="saveNote('${b.id}')" class="bg-purple-600 px-3 py-1 rounded-lg text-[11px] font-black whitespace-nowrap">修改名称</button>
                             </div>
                         </div>
                         <div class="bg-black/40 p-4 rounded-2xl mb-4 border border-slate-800">
-                            <input oninput="saveDraft('${b.id}', 'url', this.value)" id="url-${b.id}" placeholder="面板地址" value="${getDraft(b.id, 'url', b.settings.pterodactyl?.url)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[10px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
-                            <input oninput="saveDraft('${b.id}', 'sid', this.value)" id="sid-${b.id}" placeholder="服务器ID" value="${getDraft(b.id, 'sid', b.settings.pterodactyl?.id)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[10px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
-                            <input oninput="saveDraft('${b.id}', 'key', this.value)" id="key-${b.id}" type="password" placeholder="API Key" value="${getDraft(b.id, 'key', b.settings.pterodactyl?.key)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[10px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
-                            <input oninput="saveDraft('${b.id}', 'ddir', this.value)" id="ddir-${b.id}" placeholder="默认目录" value="${getDraft(b.id, 'ddir', b.settings.pterodactyl?.defaultDir)}" class="w-full bg-slate-950 text-emerald-400 rounded-lg px-2 py-1 text-[10px] mb-2 border border-emerald-900/30 outline-none transition-all">
-                            <div class="flex gap-2 mb-2"><button onclick="savePto('${b.id}')" class="flex-1 bg-slate-800 text-[9px] py-1.5 rounded-lg font-bold">保存</button><button onclick="testPanel('${b.id}')" class="flex-1 bg-teal-600 text-[9px] py-1.5 rounded-lg font-bold">连接测试</button><button onclick="openFiles('${b.id}')" class="flex-1 bg-blue-600 text-[9px] py-1.5 rounded-lg font-bold">📁 文件</button></div>
-                            <div class="flex gap-2"><button onclick="pteroPower('${b.id}','restart')" class="flex-1 bg-amber-600 text-[9px] py-1.5 rounded-lg font-bold">↻ 重启服务器</button><button onclick="pteroPower('${b.id}','start')" class="flex-1 bg-emerald-700 text-[9px] py-1.5 rounded-lg font-bold">▶ 启动</button><button onclick="pteroPower('${b.id}','stop')" class="flex-1 bg-red-700 text-[9px] py-1.5 rounded-lg font-bold">⏹ 停止</button></div>
+                            <input oninput="saveDraft('${b.id}', 'url', this.value)" id="url-${b.id}" placeholder="面板地址" value="${getDraft(b.id, 'url', b.settings.pterodactyl?.url)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[11px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
+                            <input oninput="saveDraft('${b.id}', 'sid', this.value)" id="sid-${b.id}" placeholder="服务器ID" value="${getDraft(b.id, 'sid', b.settings.pterodactyl?.id)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[11px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
+                            <input oninput="saveDraft('${b.id}', 'key', this.value)" id="key-${b.id}" type="password" placeholder="API Key" value="${getDraft(b.id, 'key', b.settings.pterodactyl?.key)}" class="w-full bg-slate-900 rounded-lg px-2 py-1 text-[11px] mb-1 text-white border border-transparent focus:border-blue-500 outline-none transition-all">
+                            <input oninput="saveDraft('${b.id}', 'ddir', this.value)" id="ddir-${b.id}" placeholder="默认目录" value="${getDraft(b.id, 'ddir', b.settings.pterodactyl?.defaultDir)}" class="w-full bg-slate-950 text-emerald-400 rounded-lg px-2 py-1 text-[11px] mb-2 border border-emerald-900/30 outline-none transition-all">
+                            <div class="flex gap-2 mb-2"><button onclick="savePto('${b.id}')" class="flex-1 bg-slate-800 text-[11px] py-1.5 rounded-lg font-bold">保存</button><button onclick="testPanel('${b.id}')" class="flex-1 bg-teal-600 text-[11px] py-1.5 rounded-lg font-bold">连接测试</button><button onclick="openFiles('${b.id}')" class="flex-1 bg-blue-600 text-[11px] py-1.5 rounded-lg font-bold">📁 文件</button></div>
+                            <div class="flex gap-2"><button onclick="pteroPower('${b.id}','restart')" class="flex-1 bg-amber-600 text-[11px] py-1.5 rounded-lg font-bold">↻ 重启服务器</button><button onclick="pteroPower('${b.id}','start')" class="flex-1 bg-emerald-700 text-[11px] py-1.5 rounded-lg font-bold">▶ 启动</button><button onclick="pteroPower('${b.id}','stop')" class="flex-1 bg-red-700 text-[11px] py-1.5 rounded-lg font-bold">⏹ 停止</button></div>
                         </div>
                         <div class="grid grid-cols-3 gap-2 mb-4">
-                            <button onclick="toggle('${b.id}','ai')" class="py-2 rounded-xl text-[10px] font-bold ${b.settings.ai?'bg-blue-600':'bg-slate-800'}">👁️ AI视角</button>
-                            <button onclick="toggle('${b.id}','walk')" class="py-2 rounded-xl text-[10px] font-bold ${b.settings.walk?'bg-emerald-600':'bg-slate-800'}">👣 巡逻</button>
-                            <button onclick="toggle('${b.id}','chat')" class="py-2 rounded-xl text-[10px] font-bold ${b.settings.chat?'bg-orange-600':'bg-slate-800'}">💬 喊话</button>
+                            <button onclick="toggle('${b.id}','ai')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.ai?'bg-blue-600':'bg-slate-800'}">👁️ AI视角</button>
+                            <button onclick="toggle('${b.id}','walk')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.walk?'bg-emerald-600':'bg-slate-800'}">👣 巡逻</button>
+                            <button onclick="toggle('${b.id}','chat')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.chat?'bg-orange-600':'bg-slate-800'}">💬 喊话</button>
                         </div>
-                        <div class="log-box bg-black/60 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[9px] border border-white/5">
+                        <div class="log-box bg-black/60 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[11px] border border-white/5">
                             ${b.logs.map(l => `<div class="mb-1 ${l.color}"><span class="opacity-30 mr-1">[${l.time}]</span>${l.msg}</div>`).join('')}
                         </div>
                     </div>
