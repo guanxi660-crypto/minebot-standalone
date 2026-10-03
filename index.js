@@ -531,7 +531,9 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
     botMeta.pushLog = pushLog;
 
     try {
-        const bot = mineflayer.createBot({ host: finalHost, port: finalPort, username: username, auth: 'offline', hideErrors: true, physicsEnabled: settings ? settings.walk : false, connectTimeout: CONNECT_TIMEOUT });
+        // 物理引擎: 巡逻(移动) 或 挖矿(挖掘动作) 任一开启都需要, 两者都关才休眠
+        const needPhysics = (settings && (settings.walk || settings.mine)) ? true : false;
+        const bot = mineflayer.createBot({ host: finalHost, port: finalPort, username: username, auth: 'offline', hideErrors: true, physicsEnabled: needPhysics, connectTimeout: CONNECT_TIMEOUT });
         bot.loadPlugin(pathfinder);
         botMeta.instance = bot;
 
@@ -746,10 +748,15 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
 
     bot.pushLog(`🔘 切换: ${label} -> ${statusText}`, 'text-yellow-400 font-bold');
 
-    if (type === 'walk' && bot.instance) {
-        bot.instance.physicsEnabled = bot.settings.walk;
-        if (bot.settings.walk) {
-            bot.pushLog(`⚙️ 物理引擎: 已激活 (巡逻模式)`, 'text-yellow-600 font-bold');
+    // 物理引擎: 巡逻或挖矿任一开启即需保持激活(挖矿要靠物理引擎执行挖掘动作)
+    if ((type === 'walk' || type === 'mine') && bot.instance) {
+        const needPhysics = !!(bot.settings.walk || bot.settings.mine);
+        bot.instance.physicsEnabled = needPhysics;
+        if (needPhysics) {
+            const by = [];
+            if (bot.settings.walk) by.push('巡逻');
+            if (bot.settings.mine) by.push('挖矿');
+            bot.pushLog(`⚙️ 物理引擎: 已激活 (${by.join('+')})`, 'text-yellow-600 font-bold');
         } else {
             bot.instance.pathfinder.setGoal(null);
             bot.isMoving = false;
