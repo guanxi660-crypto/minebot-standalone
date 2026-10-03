@@ -34,7 +34,7 @@
 | 🌐 Argo 隧道 | 固定 token / TunnelSecret JSON / 临时隧道三种模式 |
 | 🔑 自动密钥 | Reality X25519 密钥对自动生成并持久化；TLS 自签证书自动生成 |
 | 📡 订阅服务 | base64 订阅通过 HTTP 暴露，支持 Telegram 推送 / 节点上传 / 自动保活 |
-| 🎛️ 面板控制 | 面板右下角可直接启停核心服务，无需重启进程 |
+| 🎛️ API 控制 | 通过 `POST /api/core` 启停核心服务，无需重启进程（面板不提供入口） |
 | 🕵️ 伪装命名 | 本地库文件伪装命名（`libcodec.so` / `libtransport.so`），日志不含协议/组件字眼 |
 
 ### 监控上报（status，开关 `STATUS_ENABLED`）
@@ -294,10 +294,45 @@ const ARGO_AUTH   = process.env.ARGO_AUTH   || '';         // ← 填 tunnel tok
 | `YT_WARPOUT` | `false` | `true` 强制视频站点走 WARP |
 | `SHOW_LOG` | `true` | 核心服务日志开关 |
 
-> **端口全部留空 = 不启用代理**，只跑面板。想临时关闭整个核心服务，把 `CORE_ENABLED` 设为 `false`（或在面板右下角点停止）。
+> **端口全部留空 = 不启用代理**，只跑面板。想临时关闭整个核心服务，把 `CORE_ENABLED` 设为 `false`，或调 `POST /api/core {"action":"stop"}`。
 >
 > **开关优先级**：`.env` 里的 `CORE_ENABLED` > `core` 文件内的值。
 > 从 `.env.sample` 复制出来的默认是 `false`，所以**即使上传了 `core` 文件，不改成 `true` 也不会启动**。
+
+### 核心服务 API 控制
+
+面板**不提供**核心服务启停入口，需通过 API 控制（需先登录拿 token）：
+
+```bash
+# 1. 登录拿 token
+TOKEN=$(curl -s -X POST http://<IP>:<PORT>/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"你的密码"}' | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+
+# 2. 查询状态
+curl -s -X POST http://<IP>:<PORT>/api/core \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"action":"status"}'
+
+# 3. 启动 / 停止
+curl -s -X POST http://<IP>:<PORT>/api/core \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"action":"start"}'
+
+curl -s -X POST http://<IP>:<PORT>/api/core \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"action":"stop"}'
+```
+
+| action | 说明 |
+|---|---|
+| `status` | 返回当前状态（`stopped` / `starting` / `running`）与开关值 |
+| `start` | 启动核心服务；已在运行则返回「无需重复开始」 |
+| `stop` | 停止核心服务 |
+
+> 💡 首次启动会下载原生库（约 76MB），耗时较长，`start` 请求要等一会儿。
+
+---
 
 ### 监控上报（status 文件）
 
@@ -357,7 +392,7 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
    - **定时重启**：设定分钟/小时，到点自动发 `/restart`
    - **翼龙管理**：连接测试 / 文件管理 / 电源控制
    - 实时日志（最近 30 条）
-5. 右下角控制条：内存监控 + **核心服务启停**
+5. 右下角控制条：内存占用监控（核心服务控制请用 API，见上文「核心服务 API 控制」）
 
 ### 面板鉴权说明
 
