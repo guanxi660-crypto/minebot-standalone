@@ -316,9 +316,9 @@ setInterval(async () => {
         });
 
         if (SHUTDOWN_MEMORY_PERCENT > 0 && percent > SHUTDOWN_MEMORY_PERCENT) {
-                            console.error(`\n⚠️ [${new Date().toLocaleTimeString()}] 内存占用 ${status.percent}%，触发优雅关闭`);
-                            await gracefulShutdown('内存占用超过阈值');
-                        }
+            console.error(`\n⚠️ [${new Date().toLocaleTimeString()}] 内存占用 ${status.percent}%，触发优雅关闭`);
+            await gracefulShutdown('内存占用超过阈值');
+        }
     }
 }, MEMORY_WATCH_INTERVAL);
 
@@ -553,6 +553,8 @@ app.post("/api/bots/:id/restart-now", apiErrorHandler(async (req, res) => {
 app.post("/api/bots/:id/reconnect", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
 
+    // 置手动重连标志, 阻止 attemptRepair 的 10 秒延迟重连插队 (防双重重连)
+    bot.isReconnecting = true;
     // 强制断开当前连接, 立即重连 (不走自动重连的延迟)
     bot.isRepairing = false; // 允许立即重连
     if (bot.instance) {
@@ -569,6 +571,7 @@ app.post("/api/bots/:id/reconnect", apiErrorHandler(async (req, res) => {
     // 立即重建连接
     setTimeout(() => {
         if (!activeBots.has(req.params.id)) return;
+        bot.isReconnecting = false;
         bot.isRepairing = false;
         createSmartBot(req.params.id, bot.targetHost, bot.targetPort, bot.username, bot.logs, bot.settings);
     }, 1000);
