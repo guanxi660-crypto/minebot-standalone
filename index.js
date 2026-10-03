@@ -166,6 +166,7 @@ const ORE_SCAN_INTERVAL = 3 * 1000;   // 扫描间隔 (ms)
 const ORE_SCAN_RADIUS = 4;            // 扫描半径 (方块), 太小够不到矿, 太大路径finding开销高
 const ORE_MAX_TARGET_DISTANCE = 24;   // 单个矿脉的最远 pursue 距离
 const ORE_STUCK_TIMEOUT = 15 * 1000;  // 单个矿脉挖掘超时, 超时放弃换下一个
+const ORE_BLACKLIST_MS = 60 * 1000;   // 挖不着的矿脉拉黑时长, 避免反复尝试同一个目标
 const CHAT_RANDOM_THRESHOLD = 0.92; // 喊话触发随机阈值 (越高越不常触发)
 const CHAT_COOLDOWN_MS = 90 * 1000; // 喊话冷却时间 (90秒内不重复发言)
 const MEMORY_HIGH_PERCENT = 80;    // 内存高水位: 触发主动回收
@@ -426,6 +427,15 @@ async function saveBotsConfig() {
 function findNearestOre(bot) {
     if (!bot.entity) return null;
     const origin = bot.entity.position.floored();
+    const now = Date.now();
+    // 先清掉过期的黑名单(挖不着的矿脉, 隔一段时间再试)
+    if (bot._oreBlacklist) {
+        for (const k of Object.keys(bot._oreBlacklist)) {
+            if (now > bot._oreBlacklist[k]) delete bot._oreBlacklist[k];
+        }
+    }
+    const banned = bot._oreBlacklist || (bot._oreBlacklist = {});
+
     let best = null;
     let bestDist = Infinity;
 
@@ -436,6 +446,7 @@ function findNearestOre(bot) {
                 // blockAt 对未加载区块返回 null, 自动跳过
                 const block = bot.blockAt(pos);
                 if (!block || !ORE_BLOCKS.includes(block.name)) continue;
+                if (banned[`${pos.x},${pos.y},${pos.z}`]) continue;   // 跳过挖不着的
                 const dist = pos.distanceTo(origin);
                 if (dist < bestDist) { bestDist = dist; best = pos; }
             }
@@ -458,16 +469,23 @@ function tryMineOnce(bot, botMeta) {
     // 已在挖就保持当前目标, 不重复下 goal
     if (botMeta.oreTarget) {
         if (Date.now() - botMeta.oreTargetAt > ORE_STUCK_TIMEOUT) {
-            // 超时: 放弃这个目标 (可能够不到/被卡住), 清掉换下一个
+            // 超时: 把这块矿拉黑一段时间, 避免反复锁同一个挖不着的目标
+            const t = botMeta.oreTarget;
+            if (!bot._oreBlacklist) bot._oreBlacklist = {};
+            bot._oreBlacklist[`${t.x},${t.y},${t.z}`] = Date.now() + ORE_BLACKLIST_MS;
             botMeta.oreTarget = null;
-            botMeta.pushLog(`⏱️ 挖掘超时, 放弃目标`, 'text-yellow-600');
+            botMeta.pushLog(`⏱️ 挖掘超时, 暂时跳过该矿脉`, 'text-yellow-600');
             return 'stuck';
         }
         return 'mining';
     }
 
     try {
-        bot.pathfinder.setGoal(new goals.GoalBreakBlock(found.pos));
+        // ⚠️ GoalBreakBlock 签名是 (x, y, z, bot, options), 不是传一个 Vec3!
+        //    传错会导致目标坐标全是 undefined, bot 原地不动直到超时。
+        bot.pathfinder.setGoal(new goals.GoalBreakBlock(
+            found.pos.x, found.pos.y, found.pos.z, bot
+        ));
         botMeta.oreTarget = found.pos;
         botMeta.oreTargetAt = Date.now();
         botMeta.isMoving = true;
