@@ -41,11 +41,12 @@ echo -e "${GREEN}✓ 依赖安装完成${NC}"
 # 3. 配置 .env
 echo -e "${YELLOW}[3/5] 检查 .env 配置文件...${NC}"
 if [ ! -f .env ]; then
-    if [ -f .env.example ]; then
-        cp .env.example .env
-        echo -e "${YELLOW}⚠ 已从 .env.example 创建 .env 文件，请根据实际情况修改${NC}"
+    if [ -f .env.sample ]; then
+        cp .env.sample .env
+        echo -e "${YELLOW}⚠ 已从 .env.sample 创建 .env 文件，请根据实际情况修改${NC}"
+        echo -e "${YELLOW}  (代理/监控模块的配置请直接编辑 core 与 status 文件)${NC}"
     else
-        echo -e "${YELLOW}⚠ 未找到 .env.example，跳过${NC}"
+        echo -e "${YELLOW}⚠ 未找到 .env.sample，跳过${NC}"
     fi
 else
     echo -e "${GREEN}✓ .env 已存在${NC}"

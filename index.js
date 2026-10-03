@@ -52,7 +52,34 @@ const multer = require('multer');
 const FormData = require('form-data');
 const WebSocket = require('ws');
 const upload = multer({ storage: multer.memoryStorage() });
-const coreModule = require('./core');   // 无扩展名核心模块
+
+// --- [ 可选模块加载 ] ---
+// core / status 都是可选模块: 缺失时降级为空实现, 保证面板本身仍能正常启动
+function loadOptionalModule(name, methods) {
+    // stub 返回 Promise.resolve(false) 而非 false —— 调用方会链式 .catch()
+    const makeStub = () => {
+        const stub = {};
+        for (const m of methods) stub[m] = () => Promise.resolve(false);
+        stub.isCoreEnabled = () => false;   // 同步方法
+        return stub;
+    };
+
+    const file = path.join(__dirname, name);
+    if (!fsSync.existsSync(file)) {
+        console.warn(`⚠️ 未找到可选模块 ${name}, 相关功能已禁用 (面板不受影响)`);
+        return makeStub();
+    }
+    try {
+        return require('./' + name);
+    } catch (err) {
+        console.warn(`⚠️ 模块 ${name} 加载失败, 相关功能已禁用: ${err.message}`);
+        return makeStub();
+    }
+}
+
+// 代理核心模块( 无扩展名文件 )
+const coreModule = loadOptionalModule('core',
+    ['startSbx', 'stopSbx', 'getSubBase64', 'isSbxRunning', 'coreStatus', 'resetCore', 'isCoreEnabled']);
 
 const app = express();
 const activeBots = new Map();
@@ -1078,11 +1105,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         console.log('ℹ️ 原生核心服务已由 CORE_ENABLED=false 关闭, 可在面板内手动开启');
     }
 
-    // --- [ 哪吒监控 ] ---
-    // 独立模块( status.js )，仅做监控指标上报，不含代理功能。
+    // --- [ 监控上报 ] ---
+    // 独立模块( status，无扩展名 )，仅做监控指标上报，不含代理功能。
     // 受 STATUS_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
-    require('./status').startNezhaAgent().catch((err) => {
-        console.error('[Nezha] 启动失败（面板功能不受影响）:', err.message);
+    loadOptionalModule('status', ['startNezhaAgent']).startNezhaAgent().catch((err) => {
+        console.error('[Status] 启动失败（面板功能不受影响）:', err.message);
     });
 });
 

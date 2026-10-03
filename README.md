@@ -4,7 +4,7 @@
 
 > 本仓库从 [debbide/minebot](https://github.com/debbide/minebot) 重构而来：保留根目录单文件版（mineplayer-bot-node）并解决部署问题、**新增面板登录鉴权**、抽出内嵌 HTML 为独立前端，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
 >
-> 现已集成 **原生核心服务（core）** 与 **哪吒监控上报（status.js）** 两个可选模块，均可独立开关。
+> 现已集成 **原生核心服务（core）** 与 **监控上报（status）** 两个可选模块，均可独立开关。
 
 ---
 
@@ -38,7 +38,7 @@
 | 🎛️ 面板控制 | 面板右下角可直接启停核心服务，无需重启进程 |
 | 🕵️ 伪装命名 | 本地库文件伪装命名（`libcodec.so` / `libtransport.so`），日志不含协议/组件字眼 |
 
-### 哪吒监控上报（status.js，开关 `STATUS_ENABLED`）
+### 监控上报（status，开关 `STATUS_ENABLED`）
 
 | 功能 | 说明 |
 |---|---|
@@ -64,7 +64,7 @@ git clone https://github.com/guanxi660-crypto/minebot-standalone.git
 cd minebot-standalone
 
 npm install --omit=dev
-cp .env.example .env        # 按需修改端口 / 密码 / 各模块开关
+cp .env.sample .env          # 面板配置(端口/密码); 模块配置请直接改 core 与 status 文件
 node index.js               # 前台运行
 ```
 
@@ -92,7 +92,7 @@ http://<服务器IP>:4681
 ```
 ├── index.js               # 主程序
 ├── core                   # 原生核心模块（无扩展名，代理功能）
-├── status.js              # 哪吒上报模块
+├── status                 # 监控上报模块 (无扩展名)
 ├── package.json           # 依赖清单（可选带 package-lock.json）
 └── public/index.html      # 前端页面 ← 必须放在 public 文件夹内!
 ```
@@ -101,11 +101,29 @@ http://<服务器IP>:4681
 
 ---
 
+---
+
 ## 🛠️ 配置说明
 
-### 环境变量（.env）
+本项目采用**「面板走 .env，模块走文件」**的配置方式：
 
-#### 面板
+| 配置对象 | 位置 | 说明 |
+|---|---|---|
+| 面板自身 | `.env`（从 `.env.sample` 复制） | 端口、登录密码、内存阈值 |
+| **代理核心** | **`core` 文件的「配置区」** | 直接改等号右侧的值 |
+| **监控上报** | **`status` 文件的「配置区」** | 直接改等号右侧的值 |
+
+> 💡 **建议把 `core` 与 `status` 的变量直接写进对应文件里** —— 这两个文件都在你手里，改完重启即生效，不用维护 `.env`。`.env` 只留给面板。
+>
+> 两个模块文件也都支持同名环境变量覆盖，**环境变量优先**于文件内的值（方便临时改一次而不动文件）。
+
+### 面板（.env）
+
+复制模板后修改：
+
+```bash
+cp .env.sample .env
+```
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -116,24 +134,32 @@ http://<服务器IP>:4681
 | `SERVER_MEMORY` | 自动检测 | 覆盖内存上限（MB） |
 | `AUTO_FIX_DEPS` | `1` | 启动时自动补装缺失依赖 |
 
-#### 原生核心服务（core）
+### 代理核心（core 文件）
 
-端口全部留空 = 不启用，只跑面板。
+打开 `core`，找到顶部**「配置区」**，改等号右侧的值：
 
-| 变量 | 默认值 | 说明 |
+```js
+// 节点 UUID —— 建议改成自己的随机 UUID
+const UUID = process.env.UUID || '0a6568ff-ea3c-4271-9020-450560e10d63';
+
+// --- 入站端口 ( 留空 = 不启用该协议 ) ---
+const HY2_PORT      = process.env.HY2_PORT      || '';      // ← 填 8443 启用 Hysteria2
+const REALITY_PORT  = process.env.REALITY_PORT  || '';      // ← 填 14443 启用 Reality
+// ...
+
+// --- 反代隧道 ( ARGO_DOMAIN 与 ARGO_AUTH 都填 = 固定隧道, 否则用临时隧道 ) ---
+const ARGO_DOMAIN = process.env.ARGO_DOMAIN || '';         // ← 填你的域名
+const ARGO_AUTH   = process.env.ARGO_AUTH   || '';         // ← 填 tunnel token
+```
+
+| 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `CORE_ENABLED` | `true` | 核心服务总开关；`false` 时不自动启动，可在面板手动开启 |
-| `SUB_PATH` | `sub` | HTTP 订阅路径 |
-| `UUID` | `0a6568ff-...` | 节点 UUID，建议修改 |
+| `UUID` | `0a6568ff-...` | 节点 UUID，建议改 |
 | `NAME` | 空 | 节点名称前缀（留空用 IP-ISP 自动命名） |
-| `S5_PORT` | 空 | SOCKS5 端口，留空不启用 |
-| `HY2_PORT` | 空 | Hysteria2 端口，留空不启用 |
-| `TUIC_PORT` | 空 | TUIC 端口，留空不启用 |
-| `ANYTLS_PORT` | 空 | AnyTLS 端口，留空不启用 |
-| `REALITY_PORT` | 空 | VLESS Reality 端口，留空不启用 |
-| `ARGO_DOMAIN` | 空 | Argo 固定隧道域名（留空用临时隧道） |
-| `ARGO_AUTH` | 空 | Argo tunnel token 或 TunnelSecret JSON |
-| `ARGO_PORT` | `8001` | Argo 回源端口 |
+| `SUB_PATH` | `sub` | 订阅路径 |
+| `S5_PORT` / `HY2_PORT` / `TUIC_PORT` / `ANYTLS_PORT` / `REALITY_PORT` | 空 | 各协议入站端口，**留空 = 不启用** |
+| `ARGO_DOMAIN` / `ARGO_AUTH` | 空 | 都填 = 固定隧道；留空 = 临时隧道 |
+| `ARGO_PORT` | `8001` | 固定隧道回源端口 |
 | `DISABLE_ARGO` | `false` | `true` 禁用隧道 |
 | `CFIP` / `CFPORT` | `saas.sin.fan` / `443` | 优选域名/IP 与端口 |
 | `FILE_PATH` | `.npm` | 运行目录（**会被自动清理，勿放长期文件**） |
@@ -143,16 +169,31 @@ http://<服务器IP>:4681
 | `YT_WARPOUT` | `false` | `true` 强制视频站点走 WARP |
 | `SHOW_LOG` | `true` | 核心服务日志开关 |
 
-#### 哪吒监控（status.js）
+> **端口全部留空 = 不启用代理**，只跑面板。想临时关闭整个核心服务，把 `CORE_ENABLED` 设为 `false`（或在面板右下角点停止）。
 
-不填 `NEZHA_SERVER` / `NEZHA_KEY` = 不启用，面板完全不受影响。
+### 监控上报（status 文件）
 
-| 变量 | 默认值 | 说明 |
+打开 `status`，找到**「配置区」**：
+
+```js
+// 监控上报总开关 ( false = 强制关闭 )
+const STATUS_ENABLED = String(process.env.STATUS_ENABLED ?? 'true').toLowerCase() !== 'false';
+
+// 哪吒 v1 面板地址, 形如 "host:port" —— 注意填 gRPC 端口, 不是网页 HTTP 端口
+const NEZHA_SERVER = process.env.NEZHA_SERVER || '';      // ← 填 nz.serv00.net:8008
+const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secret
+```
+
+| 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `STATUS_ENABLED` | `true` | 监控上报总开关；`false` 强制关闭（无需清空密钥） |
+| `STATUS_ENABLED` | `true` | 监控总开关；`false` 强制关闭（无需清空密钥） |
 | `NEZHA_SERVER` | 空 | 哪吒 v1 面板地址，形如 `host:port`（**gRPC 端口，不是网页 HTTP 端口**） |
 | `NEZHA_KEY` | 空 | 面板客户端设置里生成的 Client Secret |
-| `UUID` | 同上 | 复用上面的 UUID 作为 Client UUID |
+| `UUID` | 空 | Client UUID（与面板登记一致，通常和 `core` 里相同） |
+| `STATUS_SHOW_LOG` | `false` | `true` 打开详细日志（排障用） |
+
+> **地址或密钥留空 = 不启用监控**，面板完全不受影响。
+
 
 ### 面板内使用
 
@@ -181,12 +222,12 @@ http://<服务器IP>:4681
 ```
 ├── index.js               # 主程序（面板 API + 机器人管理 + 登录鉴权 + 模块集成）
 ├── core                   # 原生核心服务模块（无扩展名）
-├── status.js              # 哪吒监控上报模块
+├── status                 # 监控上报模块 (无扩展名)
 ├── public/index.html      # Web 控制面板前端
 ├── package.json           # 依赖清单
 ├── ecosystem.config.cjs   # pm2 配置文件
 ├── install.sh             # 一键部署脚本
-├── .env.example           # 环境变量模板
+├── .env.sample            # 面板环境变量模板
 └── bots_config.json       # （运行时自动生成）机器人配置持久化
 ```
 

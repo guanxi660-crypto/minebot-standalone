@@ -33,29 +33,47 @@ const axios = require('axios');
 const koffi = require('koffi');
 const { execSync } = require('child_process');
 
-// ======================== 环境变量定义 ========================
-const UPLOAD_URL     = process.env.UPLOAD_URL     || '';         // 订阅或节点自动上传地址, 需填写部署 Merge-sub 项目后的首页地址
-const PROJECT_URL    = process.env.PROJECT_URL    || '';         // 需要上传订阅或保活时需填写项目分配的 url
-const AUTO_ACCESS    = process.env.AUTO_ACCESS    || false;      // false 关闭自动保活, true 开启, 需同时填写 PROJECT_URL 变量
-const YT_WARPOUT     = process.env.YT_WARPOUT     || false;      // 设置为 true 时强制使用 warp 出站访问视频站点
-const FILE_PATH      = process.env.FILE_PATH      || '.npm';     // 运行目录, 存放动态库 / 配置 / 订阅和临时文件
-const SUB_PATH       = process.env.SUB_PATH       || 'sub';      // 订阅 sub 路径, 默认为 sub
-const UUID           = process.env.UUID           || '0a6568ff-ea3c-4271-9020-450560e10d63'; // UUID, 建议自行修改
-const ARGO_DOMAIN    = process.env.ARGO_DOMAIN    || '';         // 固定隧道域名, 留空即使用临时隧道
-const ARGO_AUTH      = process.env.ARGO_AUTH      || '';         // 固定隧道 token 或 json, 留空即使用临时隧道
+// ============================================================
+// 配置区 —— 直接在本文件修改下列等号右侧的值即可, 保存后重启进程生效
+// ( 留空 / false / 0 = 不启用对应功能 )
+// 也仍可用同名环境变量覆盖, 环境变量优先于这里的值
+// ============================================================
+
+// 节点 UUID —— 建议改成自己的随机 UUID
+const UUID           = process.env.UUID           || '0a6568ff-ea3c-4271-9020-450560e10d63';
+// 节点名称前缀 —— 留空则用 IP-ISP 自动命名
+const NAME           = process.env.NAME           || '';
+// 订阅路径 —— 订阅地址为 http://<IP>:<面板端口>/<SUB_PATH>
+const SUB_PATH       = process.env.SUB_PATH       || 'sub';
+
+// --- 入站端口 ( 留空 = 不启用该协议 ) ---
+const S5_PORT        = process.env.S5_PORT        || '';         // SOCKS5
+const HY2_PORT       = process.env.HY2_PORT       || '';         // Hysteria2
+const TUIC_PORT      = process.env.TUIC_PORT      || '';         // TUIC
+const ANYTLS_PORT    = process.env.ANYTLS_PORT    || '';         // AnyTLS
+const REALITY_PORT   = process.env.REALITY_PORT   || '';         // VLESS Reality
+
+// --- 反代隧道 ( ARGO_DOMAIN 与 ARGO_AUTH 都填 = 固定隧道, 否则用临时隧道 ) ---
+const ARGO_DOMAIN    = process.env.ARGO_DOMAIN    || '';
+const ARGO_AUTH      = process.env.ARGO_AUTH      || '';         // tunnel token 或 TunnelSecret JSON
 const ARGO_PORT      = Number(process.env.ARGO_PORT) || 8001;    // 固定隧道回源端口
-const S5_PORT        = process.env.S5_PORT        || '';         // socks5 端口, 留空不启用
-const TUIC_PORT      = process.env.TUIC_PORT      || '';         // tuic 端口, 留空不启用
-const HY2_PORT       = process.env.HY2_PORT       || '';         // hy2 端口, 留空不启用
-const ANYTLS_PORT    = process.env.ANYTLS_PORT    || '';         // AnyTLS 端口, 留空不启用
-const REALITY_PORT   = process.env.REALITY_PORT   || '';         // reality 端口, 留空不启用
+const DISABLE_ARGO   = process.env.DISABLE_ARGO   || false;      // true = 禁用隧道
 const CFIP           = process.env.CFIP           || 'saas.sin.fan'; // 优选域名或优选 IP
-const CFPORT         = Number(process.env.CFPORT) || 443;        // 优选域名或优选 IP 对应端口
-const NAME           = process.env.NAME           || '';         // 节点名称前缀
-const CHAT_ID        = process.env.CHAT_ID        || '';         // Telegram chat_id, 两个变量不全不推送
-const BOT_TOKEN      = process.env.BOT_TOKEN      || '';         // Telegram bot_token, 两个变量不全不推送
-const DISABLE_ARGO   = process.env.DISABLE_ARGO   || false;      // 设置为 true 时禁用反代隧道
-const SHOW_LOG       = !['false', 'disable', 'no'].includes((process.env.SHOW_LOG || 'true').toLowerCase()); // 日志开关, 默认显示
+const CFPORT         = Number(process.env.CFPORT) || 443;        // 优选 IP 对应端口
+
+// --- Telegram 推送 ( CHAT_ID 与 BOT_TOKEN 都填才推送 ) ---
+const CHAT_ID        = process.env.CHAT_ID        || '';
+const BOT_TOKEN      = process.env.BOT_TOKEN      || '';
+
+// --- 订阅自动上传 ( 需另部署 Merge-sub ) ---
+const UPLOAD_URL     = process.env.UPLOAD_URL     || '';         // Merge-sub 首页地址
+const PROJECT_URL    = process.env.PROJECT_URL    || '';         // 本项目分配的公网 url
+const AUTO_ACCESS    = process.env.AUTO_ACCESS    || false;      // true = 自动保活, 需同时填 PROJECT_URL
+
+// --- 其他 ---
+const YT_WARPOUT     = process.env.YT_WARPOUT     || false;      // true = 强制视频站点走 WARP 出站
+const FILE_PATH      = process.env.FILE_PATH      || '.npm';     // 运行目录 ( 会被自动清理, 勿放长期文件 )
+const SHOW_LOG       = !['false', 'disable', 'no'].includes((process.env.SHOW_LOG || 'true').toLowerCase()); // 日志开关
 // =============================================================
 
 // --- [ 伪装命名表 ] ---

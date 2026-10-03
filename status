@@ -10,14 +10,18 @@
  *   哪吒 v1 Dashboard 使用 gRPC( protobuf over HTTP2 )。v2 换了完全不同的传输方式，
  *   这里只实现 v1，与已部署的面板保持一致。
  *
- * 【配置来源】( 全部读环境变量 )
+ * 【配置方式】
+ *   推荐：直接在本文件的「配置区」修改等号右侧的值, 保存后重启生效。
+ *   也可用同名环境变量覆盖( 环境变量优先 )。
+ *
+ * 【配置项】( 全部在本文件配置区, 不依赖 .env )
  *   STATUS_ENABLED 监控上报总开关，默认 true；设为 false 强制关闭上报
- *                 ( 与代理核心的 CORE_ENABLED 相互独立，互不影响 )
+ *                 ( 与核心模块 core 的 CORE_ENABLED 相互独立 )
  *   NEZHA_SERVER  哪吒面板地址，形如 "host:port"( v1 的 gRPC 端口，不是 8008 的 HTTP 端口 )
  *                 留空 = 不启用本模块( startNezhaAgent() 直接返回 )
  *   NEZHA_KEY     面板里该客户端的 Client Secret
  *   UUID          该客户端的 Client UUID ( 与面板中登记的一致 )
- *   SHOW_LOG      设为 "1" 打开详细日志( 默认关闭，避免刷屏 )
+ *   STATUS_SHOW_LOG  设为 true 打开详细日志 ( 排障用, 默认关闭避免刷屏 )
  *
  * 【是否走 TLS】
  *   由端口判断: 443 / 2053 / 2083 / 2087 / 2096 / 8443 视为 TLS 端口 → createSsl()；
@@ -51,17 +55,26 @@ try {
     // 同上，缺失时报错退出本模块
 }
 
-const UUID = process.env.UUID || '';
-const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
-const NEZHA_KEY = process.env.NEZHA_KEY || '';
+// ============================================================
+// 配置区 —— 直接在本文件修改下列等号右侧的值即可, 保存后重启进程生效
+// ( 留空 / false = 不启用 )
+// 也仍可用同名环境变量覆盖, 环境变量优先于这里的值
+// ============================================================
 
-/**
- * 监控上报总开关( 与代理核心的 CORE_ENABLED 相互独立 )
- *   未设置或 true  → 按下方 NEZHA_SERVER/NEZHA_KEY 是否填齐决定是否上报
- *   false           → 强制关闭, 即使填了面板地址与密钥也不上报
- * 用于临时静默上报( 例如排障时先关掉, 避免干扰日志 ), 无需清空密钥。
- */
+// 监控上报总开关 ( 与 core 的 CORE_ENABLED 相互独立 )
+//   true  → 按下方 NEZHA_SERVER / NEZHA_KEY 是否填齐决定是否上报
+//   false → 强制关闭, 即使填了面板地址与密钥也不上报 ( 排障时可临时静默 )
 const STATUS_ENABLED = String(process.env.STATUS_ENABLED ?? 'true').toLowerCase() !== 'false';
+
+// 哪吒 v1 面板地址, 形如 "host:port" —— 注意填 gRPC 端口, 不是网页 HTTP 端口
+// 留空 = 不启用本模块
+const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
+// 面板客户端设置里生成的 Client Secret —— 留空 = 不启用
+const NEZHA_KEY = process.env.NEZHA_KEY || '';
+// Client UUID —— 与面板中登记的一致 ( 通常与 core 里的 UUID 相同 )
+const UUID = process.env.UUID || '';
+// 详细日志开关 —— 设为 true 打开 ( 排障用, 默认关闭避免刷屏 )
+const SHOW_LOG = String(process.env.STATUS_SHOW_LOG ?? 'false').toLowerCase() === 'true';
 
 const AGENT_VERSION = 'nodejs-9.9.9';  // 对齐官方 nodejs agent 版本号，面板侧会显示
 const REPORT_DELAY = 4;                 // 状态上报间隔( 秒 )
@@ -69,7 +82,6 @@ const RETRY_DELAY = 10;                // 断线重连等待( 秒 )
 const IP_REPORT_PERIOD = 1800;         // IP 变更检测周期( 秒 )
 const NETWORK_TIMEOUT = 8000;          // 单次 RPC 超时( ms )
 
-const SHOW_LOG = process.env.SHOW_LOG === '1' || process.env.SHOW_LOG === 'true';
 const log = (...a) => { if (SHOW_LOG) console.log(...a); };
 const logErr = (...a) => { if (SHOW_LOG) console.error(...a); };
 
