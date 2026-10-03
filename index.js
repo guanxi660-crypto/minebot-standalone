@@ -612,7 +612,9 @@ function destroyBotInstance(botMeta) {
             try { inst.pathfinder.stop && inst.pathfinder.stop(); } catch (e) { /* ignore */ }
         }
         inst.removeAllListeners();
-        inst._client = null;      // 断开底层 socket 引用
+        // ⚠️ 不要在此把 inst._client 置 null —— end() 内部还要用它 write()/end(),
+        //    提前置空会抛 "Cannot read properties of null (reading 'write')"。
+        //    内存回收交给 V8: 断开 listeners + end() 后 socket 引用自然释放。
         inst.end();
     } catch (e) { /* ignore */ }
 }
@@ -737,17 +739,20 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
         }
     }
 
-    // 挖矿开关: 开启时启动扫描定时器, 关闭时立即停掉并清理当前目标
+    // 挖矿开关: 开启时启动扫描定时器, 关闭时立即清掉并清理当前目标
+    // 注意: bot 是 botMeta(元数据), 真实实例是 bot.instance —— entity 等字段都在实例上
     if (type === 'mine') {
         const inst = bot.instance;
         if (bot.settings.mine) {
-            if (!inst || !bot.entity) {
+            if (!inst || !inst.entity) {
                 bot.pushLog(`⚠️ 未连接到服务器, 无法开启挖矿`, 'text-red-400');
             } else {
                 if (bot.oreTimer) clearInterval(bot.oreTimer);
                 bot.oreTimer = setInterval(() => {
-                    if (!bot.entity || !bot.instance) return;
-                    const r = tryMineOnce(bot, bot);
+                    // 实例可能已因断线被换掉, 每轮重新取
+                    const cur = bot.instance;
+                    if (!cur || !cur.entity) return;
+                    const r = tryMineOnce(cur, bot);
                     if (r === 'idle' || r === 'unreachable' || r === 'stuck') bot.oreTarget = null;
                 }, ORE_SCAN_INTERVAL);
                 bot.pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格)`, 'text-amber-500 font-bold');
