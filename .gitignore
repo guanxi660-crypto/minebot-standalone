@@ -4,6 +4,17 @@ node_modules/
 # 环境变量 (含密码!)
 .env
 
+# ⚠️ 模块配置私钥防护
+# core / status 的「配置区」可以直接写 UUID / 密钥 / Token,
+# 这两个文件因此可能含敏感信息 —— 提交前务必确认里面没有真实凭据。
+# 推荐做法: 仓库里只提交「留空模板版」, 线上把文件下载后填入真实值再上传。
+# 若你把自己的配置版放进了这两个文件, 请用下面这行忽略它(并保留模板版另存):
+# core.online
+# status.online
+
+# 私密目录 (线上下载的配置版等)
+minebot-standalone-private/
+
 # 运行时数据
 bots_config.json
 *.log

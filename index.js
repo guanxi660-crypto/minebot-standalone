@@ -55,12 +55,13 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // --- [ 可选模块加载 ] ---
 // core / status 都是可选模块: 缺失时降级为空实现, 保证面板本身仍能正常启动
-function loadOptionalModule(name, methods) {
-    // stub 返回 Promise.resolve(false) 而非 false —— 调用方会链式 .catch()
+// syncMethods: 同步方法( 返回值直接用, 不能返回 Promise )
+// asyncMethods: 异步方法( 调用方会链式 .then/.catch, stub 需返回 Promise )
+function loadOptionalModule(name, syncMethods = [], asyncMethods = []) {
     const makeStub = () => {
         const stub = {};
-        for (const m of methods) stub[m] = () => Promise.resolve(false);
-        stub.isCoreEnabled = () => false;   // 同步方法
+        for (const m of syncMethods) stub[m] = () => false;
+        for (const m of asyncMethods) stub[m] = () => Promise.resolve(false);
         return stub;
     };
 
@@ -78,8 +79,11 @@ function loadOptionalModule(name, methods) {
 }
 
 // 代理核心模块( 无扩展名文件 )
+// 同步: coreStatus / isSbxRunning / isCoreEnabled / getSubBase64
+// 异步: startSbx / stopSbx / resetCore
 const coreModule = loadOptionalModule('core',
-    ['startSbx', 'stopSbx', 'getSubBase64', 'isSbxRunning', 'coreStatus', 'resetCore', 'isCoreEnabled']);
+    ['coreStatus', 'isSbxRunning', 'isCoreEnabled', 'getSubBase64'],
+    ['startSbx', 'stopSbx', 'resetCore']);
 
 const app = express();
 const activeBots = new Map();
@@ -1108,7 +1112,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     // --- [ 监控上报 ] ---
     // 独立模块( status，无扩展名 )，仅做监控指标上报，不含代理功能。
     // 受 STATUS_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
-    loadOptionalModule('status', ['startNezhaAgent']).startNezhaAgent().catch((err) => {
+    loadOptionalModule('status', [], ['startNezhaAgent']).startNezhaAgent().catch((err) => {
         console.error('[Status] 启动失败（面板功能不受影响）:', err.message);
     });
 });

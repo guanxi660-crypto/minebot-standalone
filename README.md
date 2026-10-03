@@ -87,19 +87,145 @@ http://<服务器IP>:4681
 
 默认登录：**admin / admin123**（**务必修改，见下文「安全」**）
 
-### 纯上传部署（青龙/翼龙等只能传文件的平台）
+---
+
+## 📦 上传哪些文件？（按场景对照）
+
+`core` 和 `status` 是**可选模块**，默认不上传、不启动。三种场景对照如下：
+
+### 场景 A：只用挂机面板（最简，推荐新手）
+
+**上传 4 个文件：**
 
 ```
-├── index.js               # 主程序
-├── core                   # 原生核心模块（无扩展名，代理功能）
-├── status                 # 监控上报模块 (无扩展名)
-├── package.json           # 依赖清单（可选带 package-lock.json）
-└── public/index.html      # 前端页面 ← 必须放在 public 文件夹内!
+├── index.js               # 主程序（必需）
+├── package.json           # 依赖清单（必需，缺了不会 npm install）
+├── package-lock.json      # 锁定版本（推荐）
+└── public/
+    └── index.html         # 面板页面（必需，缺了页面打不开）
 ```
 
-**⚠️ 最常见的失败原因**：漏掉 `public/index.html`，或没建 `public` 文件夹 —— 页面会打不开（程序会打印明确提示）。
+**外加复制一份配置：**
+```bash
+cp .env.sample .env       # 然后按需改端口 / 密码
+```
+
+✅ 结果：面板可用，两个模块都不存在（启动时打印一行提示后跳过，不影响面板）
 
 ---
+
+### 场景 B：挂机面板 + 监控上报（哪吒）
+
+在场景 A 基础上**多加 1 个文件**：
+
+```
+├── status                 # 监控上报模块（无扩展名）
+└── .env 里加一行：
+    STATUS_ENABLED=true
+```
+
+**配置步骤：**
+
+1. 上传 `status` 到项目根目录（和 `index.js` 同级，**文件名没有 `.js`**）
+2. 打开 `status`，编辑顶部「配置区」：
+   ```js
+   const NEZHA_SERVER = process.env.NEZHA_SERVER || '';   // 填 "主机:端口"
+   const NEZHA_KEY    = process.env.NEZHA_KEY    || '';   // 填 Client Secret
+   const UUID         = process.env.UUID         || '';   // 填 Client UUID
+   ```
+3. `.env` 里把 `STATUS_ENABLED` 改成 `true`
+4. 重启生效
+
+> ⚠️ **注意**：填了真实密钥的 `status` 文件**不要提交到 GitHub**。建议只把留空模板版放进仓库，线上单独维护一份填好值的。
+
+---
+
+### 场景 C：挂机面板 + 代理核心 + 监控上报（完整）
+
+在场景 B 基础上**再多 1 个文件**：
+
+```
+├── core                   # 代理核心模块（无扩展名）
+└── .env 里加一行：
+    CORE_ENABLED=true
+```
+
+**配置步骤：**
+
+1. 上传 `core` 到项目根目录（**文件名没有 `.js`**）
+2. 打开 `core`，编辑顶部「配置区」，至少填好要启用的入站端口：
+   ```js
+   const HY2_PORT     = process.env.HY2_PORT     || '';   // 填 8443 启用 Hysteria2
+   const REALITY_PORT = process.env.REALITY_PORT || '';   // 填 14443 启用 Reality
+   // 端口全部留空 = 不启用任何代理协议
+   ```
+3. `.env` 里把 `CORE_ENABLED` 改成 `true`
+4. 重启生效，订阅地址为 `http://<IP>:<面板端口>/<SUB_PATH>`
+
+> ⚠️ **两个前提**：
+> - `core` 的原生库仅支持 **Linux**（Windows 上会启动失败，但面板不受影响）
+> - 核心服务会自动清理 `FILE_PATH` 目录（默认 `.npm/`），**别往里放需要长期保留的文件**
+
+---
+
+### 完整文件清单
+
+| 文件 | 场景 A | 场景 B | 场景 C | 说明 |
+|---|:---:|:---:|:---:|---|
+| `index.js` | ✅ | ✅ | ✅ | 主程序，必需 |
+| `package.json` | ✅ | ✅ | ✅ | 依赖清单，必需 |
+| `package-lock.json` | ✅ | ✅ | ✅ | 版本锁定，推荐 |
+| `public/index.html` | ✅ | ✅ | ✅ | 面板页面，必需 |
+| `.env.sample` → `.env` | ✅ | ✅ | ✅ | 复制后按需改 |
+| `status` | — | ✅ | ✅ | 监控上报模块（可选） |
+| `core` | — | — | ✅ | 代理核心模块（可选） |
+| `install.sh` | 可选 | 可选 | 可选 | 一键部署脚本 |
+
+**永远不要上传**：`.env`（含密码）、`bots_config.json`（你的机器人配置）、`node_modules/`、`.npm/`
+
+> 💡 **`bots_config.json` 在更新代码时务必保留** —— 那是你的机器人列表和设置，覆盖了就没了。
+
+---
+
+### 各平台上传方式
+
+#### git clone（推荐）
+
+```bash
+git clone https://github.com/guanxi660-crypto/minebot-standalone.git
+cd minebot-standalone
+npm install --omit=dev
+cp .env.sample .env
+node index.js
+```
+
+#### Pterodactyl / 翼龙面板（只能传文件）
+
+用面板的文件管理器或 SFTP，按上表传文件，然后执行：
+
+```bash
+cd /home/container
+npm install --omit=dev
+node index.js
+```
+
+> ⚠️ 翼龙面板的启动命令通常固定为 `node index.js`，且**根目录必须有 `package.json`** 才会触发自动 `npm install`。
+> ⚠️ 更新代码时**只覆盖要更新的文件**，别动 `bots_config.json`。
+
+#### 更新已有部署
+
+只传变化的文件即可，通常是这几个：
+
+```
+index.js          # 改动了主程序
+package.json      # 改了依赖
+package-lock.json # 改了依赖
+public/index.html # 改了面板页面
+core / status     # 改了模块配置区
+```
+
+然后重启。`.env` 和 `bots_config.json` 不要动。
+
 
 ---
 
@@ -170,6 +296,9 @@ const ARGO_AUTH   = process.env.ARGO_AUTH   || '';         // ← 填 tunnel tok
 | `SHOW_LOG` | `true` | 核心服务日志开关 |
 
 > **端口全部留空 = 不启用代理**，只跑面板。想临时关闭整个核心服务，把 `CORE_ENABLED` 设为 `false`（或在面板右下角点停止）。
+>
+> **开关优先级**：`.env` 里的 `CORE_ENABLED` > `core` 文件内的值。
+> 从 `.env.sample` 复制出来的默认是 `false`，所以**即使上传了 `core` 文件，不改成 `true` 也不会启动**。
 
 ### 监控上报（status 文件）
 
@@ -191,6 +320,9 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
 | `NEZHA_KEY` | 空 | 面板客户端设置里生成的 Client Secret |
 | `UUID` | 空 | Client UUID（与面板登记一致，通常和 `core` 里相同） |
 | `STATUS_SHOW_LOG` | `false` | `true` 打开详细日志（排障用） |
+
+> **开关优先级**：`.env` 里的 `STATUS_ENABLED` > `status` 文件内的值。
+> 从 `.env.sample` 复制出来的默认是 `false`，所以**即使上传了 `status` 文件，不改成 `true` 也不会启动**。
 
 > **地址或密钥留空 = 不启用监控**，面板完全不受影响。
 
@@ -227,7 +359,7 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
 ├── package.json           # 依赖清单
 ├── ecosystem.config.cjs   # pm2 配置文件
 ├── install.sh             # 一键部署脚本
-├── .env.sample            # 面板环境变量模板
+├── .env.sample            # 面板环境变量模板（复制为 .env 后修改）
 └── bots_config.json       # （运行时自动生成）机器人配置持久化
 ```
 
@@ -242,6 +374,9 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
 2. 对外暴露务必配防火墙/安全组，只放行需要的端口
 3. WebSocket token 24 小时过期，进程重启后旧 token 全部失效（内存存储）
 4. 本服务面向可信环境，翼龙 API Key 请勿泄露
+5. ⚠️ **`core` / `status` 文件里可以直接写密钥**（UUID / Client Secret / Tunnel Token 等）。
+   仓库里请只放**留空模板版**，填了真实凭据的版本**不要提交 GitHub** ——
+   建议线下单独保存，线上传填好值的那份。
 5. 原生 `.so` 库仅 Linux 可用；Windows 下核心服务启动失败但面板不受影响
 
 ---
