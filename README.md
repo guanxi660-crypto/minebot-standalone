@@ -38,7 +38,7 @@
 | 🎛️ 面板控制 | 面板右下角可直接启停核心服务，无需重启进程 |
 | 🕵️ 伪装命名 | 本地库文件伪装命名（`libcodec.so` / `libtransport.so`），日志不含协议/组件字眼 |
 
-### 哪吒监控上报（status.js，开关 `NEZHA_ENABLED`）
+### 哪吒监控上报（status.js，开关 `STATUS_ENABLED`）
 
 | 功能 | 说明 |
 |---|---|
@@ -149,7 +149,7 @@ http://<服务器IP>:4681
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `NEZHA_ENABLED` | `true` | 监控上报总开关；`false` 强制关闭（无需清空密钥） |
+| `STATUS_ENABLED` | `true` | 监控上报总开关；`false` 强制关闭（无需清空密钥） |
 | `NEZHA_SERVER` | 空 | 哪吒 v1 面板地址，形如 `host:port`（**gRPC 端口，不是网页 HTTP 端口**） |
 | `NEZHA_KEY` | 空 | 面板客户端设置里生成的 Client Secret |
 | `UUID` | 同上 | 复用上面的 UUID 作为 Client UUID |

@@ -11,7 +11,7 @@
  *   这里只实现 v1，与已部署的面板保持一致。
  *
  * 【配置来源】( 全部读环境变量 )
- *   NEZHA_ENABLED 监控上报总开关，默认 true；设为 false 强制关闭上报
+ *   STATUS_ENABLED 监控上报总开关，默认 true；设为 false 强制关闭上报
  *                 ( 与代理核心的 CORE_ENABLED 相互独立，互不影响 )
  *   NEZHA_SERVER  哪吒面板地址，形如 "host:port"( v1 的 gRPC 端口，不是 8008 的 HTTP 端口 )
  *                 留空 = 不启用本模块( startNezhaAgent() 直接返回 )
@@ -61,7 +61,7 @@ const NEZHA_KEY = process.env.NEZHA_KEY || '';
  *   false           → 强制关闭, 即使填了面板地址与密钥也不上报
  * 用于临时静默上报( 例如排障时先关掉, 避免干扰日志 ), 无需清空密钥。
  */
-const NEZHA_ENABLED = String(process.env.NEZHA_ENABLED ?? 'true').toLowerCase() !== 'false';
+const STATUS_ENABLED = String(process.env.STATUS_ENABLED ?? 'true').toLowerCase() !== 'false';
 
 const AGENT_VERSION = 'nodejs-9.9.9';  // 对齐官方 nodejs agent 版本号，面板侧会显示
 const REPORT_DELAY = 4;                 // 状态上报间隔( 秒 )
@@ -474,8 +474,8 @@ function callWithTimeout(fn, timeoutMs) {
 // ---------------------------------------------------------------
 async function startNezhaAgent() {
     // 开关显式关闭: 静默跳过( 便于排障时临时静默上报, 不必清空密钥 )
-    if (!NEZHA_ENABLED) {
-        log('[Nezha] NEZHA_ENABLED=false, 监控上报已关闭');
+    if (!STATUS_ENABLED) {
+        log('[Nezha] STATUS_ENABLED=false, 监控上报已关闭');
         return false;
     }
 

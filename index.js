@@ -1080,7 +1080,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
     // --- [ 哪吒监控 ] ---
     // 独立模块( status.js )，仅做监控指标上报，不含代理功能。
-    // 受 NEZHA_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
+    // 受 STATUS_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
     require('./status').startNezhaAgent().catch((err) => {
         console.error('[Nezha] 启动失败（面板功能不受影响）:', err.message);
     });
