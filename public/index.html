@@ -229,11 +229,10 @@ async function updateUI(force = false) {
                             <div class="flex gap-2 mb-2"><button onclick="savePto('${b.id}')" class="flex-1 bg-slate-800 text-[11px] py-1.5 rounded-lg font-bold">保存</button><button onclick="testPanel('${b.id}')" class="flex-1 bg-teal-600 text-[11px] py-1.5 rounded-lg font-bold">连接测试</button><button onclick="openFiles('${b.id}')" class="flex-1 bg-blue-600 text-[11px] py-1.5 rounded-lg font-bold">📁 文件</button></div>
                             <div class="flex gap-2"><button onclick="pteroPower('${b.id}','restart')" class="flex-1 bg-amber-600 text-[11px] py-1.5 rounded-lg font-bold">↻ 重启服务器</button><button onclick="pteroPower('${b.id}','start')" class="flex-1 bg-emerald-700 text-[11px] py-1.5 rounded-lg font-bold">▶ 启动</button><button onclick="pteroPower('${b.id}','stop')" class="flex-1 bg-red-700 text-[11px] py-1.5 rounded-lg font-bold">⏹ 停止</button></div>
                         </div>
-                        <div class="grid grid-cols-4 gap-2 mb-4">
+                        <div class="grid grid-cols-3 gap-2 mb-4">
                             <button onclick="toggle('${b.id}','ai')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.ai?'bg-blue-600':'bg-slate-800'}">👁️ AI视角</button>
                             <button onclick="toggle('${b.id}','walk')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.walk?'bg-emerald-600':'bg-slate-800'}">👣 巡逻</button>
                             <button onclick="toggle('${b.id}','chat')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.chat?'bg-orange-600':'bg-slate-800'}">💬 喊话</button>
-                            <button onclick="toggle('${b.id}','mine')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.mine?'bg-amber-600':'bg-slate-800'}">⛏️ 找矿</button>
                         </div>
                         <div class="log-box bg-black/60 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[11px] border border-white/5">
                             ${b.logs.map(l => `<div class="mb-1 ${l.color}"><span class="opacity-30 mr-1">[${l.time}]</span>${l.msg}</div>`).join('')}

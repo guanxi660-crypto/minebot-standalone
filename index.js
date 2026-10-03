@@ -420,6 +420,10 @@ async function saveBotsConfig() {
 }
 
 // --- [ 自动找矿 ] ---
+// ⚠️ 实验性功能, 默认关闭且面板不提供按钮 (mine: false)。
+//    如需启用: 把下面 defaultSettings 的 mine 改成 true, 或调用
+//    POST /api/bots/:id/toggle { "type": "mine" }。
+//    前提: bot 手上有镐, 且矿石在 4 格内、位置可达。
 // 在 bot 周围扫描已加载区块内的矿脉, 用 GoalBreakBlock 逐个挖掉
 // 说明: mineflayer 只能拿到已加载区块的数据, 未加载区域扫不到 —— 所以机器人得先站在那里等区块加载
 
