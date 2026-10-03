@@ -9,6 +9,9 @@ bots_config.json
 *.log
 logs/
 
+# 原生服务运行目录 (动态库/配置/订阅)
+.npm/
+
 # 系统文件
 .DS_Store
 Thumbs.db

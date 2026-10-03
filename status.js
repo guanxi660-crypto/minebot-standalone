@@ -1,0 +1,601 @@
+/**
+ * status.js —— 哪吒 v1 监控上报模块
+ *
+ * 【用途】
+ *   把本机运行指标( CPU / 内存 / 磁盘 / 网络 / 负载 / 连接数 )持续上报到哪吒面板。
+ *   仅做监控上报，【不提供】终端( Terminal )与文件管理( FM )任务能力 —— 需要 node-pty 等重依赖，
+ *   在容器化 MC 面板环境里收益低、风险高，故不引入。
+ *
+ * 【协议说明】
+ *   哪吒 v1 Dashboard 使用 gRPC( protobuf over HTTP2 )。v2 换了完全不同的传输方式，
+ *   这里只实现 v1，与已部署的面板保持一致。
+ *
+ * 【配置来源】( 全部读环境变量 )
+ *   NEZHA_ENABLED 监控上报总开关，默认 true；设为 false 强制关闭上报
+ *                 ( 与代理核心的 CORE_ENABLED 相互独立，互不影响 )
+ *   NEZHA_SERVER  哪吒面板地址，形如 "host:port"( v1 的 gRPC 端口，不是 8008 的 HTTP 端口 )
+ *                 留空 = 不启用本模块( startNezhaAgent() 直接返回 )
+ *   NEZHA_KEY     面板里该客户端的 Client Secret
+ *   UUID          该客户端的 Client UUID ( 与面板中登记的一致 )
+ *   SHOW_LOG      设为 "1" 打开详细日志( 默认关闭，避免刷屏 )
+ *
+ * 【是否走 TLS】
+ *   由端口判断: 443 / 2053 / 2083 / 2087 / 2096 / 8443 视为 TLS 端口 → createSsl()；
+ *   其余端口走明文 createInsecure()。与官方 agent 行为一致。
+ */
+
+'use strict';
+
+const os = require('os');
+const fs = require('fs');
+const net = require('net');
+const dns = require('dns');
+const https = require('https');
+const path = require('path');
+
+// 监控采集依赖( systeminformation 读取硬件/负载信息 )
+let si = null;
+try {
+    si = require('systeminformation');
+} catch (_) {
+    // 依赖缺失时 startNezhaAgent() 会在启动时给出明确提示，不影响面板本身
+}
+
+// gRPC 相关( 均为可选依赖 )
+let grpc = null;
+let protoLoader = null;
+try {
+    grpc = require('@grpc/grpc-js');
+    protoLoader = require('@grpc/proto-loader');
+} catch (_) {
+    // 同上，缺失时报错退出本模块
+}
+
+const UUID = process.env.UUID || '';
+const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
+const NEZHA_KEY = process.env.NEZHA_KEY || '';
+
+/**
+ * 监控上报总开关( 与代理核心的 CORE_ENABLED 相互独立 )
+ *   未设置或 true  → 按下方 NEZHA_SERVER/NEZHA_KEY 是否填齐决定是否上报
+ *   false           → 强制关闭, 即使填了面板地址与密钥也不上报
+ * 用于临时静默上报( 例如排障时先关掉, 避免干扰日志 ), 无需清空密钥。
+ */
+const NEZHA_ENABLED = String(process.env.NEZHA_ENABLED ?? 'true').toLowerCase() !== 'false';
+
+const AGENT_VERSION = 'nodejs-9.9.9';  // 对齐官方 nodejs agent 版本号，面板侧会显示
+const REPORT_DELAY = 4;                 // 状态上报间隔( 秒 )
+const RETRY_DELAY = 10;                // 断线重连等待( 秒 )
+const IP_REPORT_PERIOD = 1800;         // IP 变更检测周期( 秒 )
+const NETWORK_TIMEOUT = 8000;          // 单次 RPC 超时( ms )
+
+const SHOW_LOG = process.env.SHOW_LOG === '1' || process.env.SHOW_LOG === 'true';
+const log = (...a) => { if (SHOW_LOG) console.log(...a); };
+const logErr = (...a) => { if (SHOW_LOG) console.error(...a); };
+
+// 哪吒 v1 的 TLS 端口白名单
+const TLS_PORTS = new Set([443, 2053, 2083, 2087, 2096, 8443]);
+
+function shouldUseTLS(server) {
+    const parts = String(server || '').split(':');
+    if (parts.length < 2) return false;
+    const port = parseInt(parts[parts.length - 1], 10);
+    return TLS_PORTS.has(port);
+}
+
+// ---------------------------------------------------------------
+// Protobuf 定义( 哪吒 v1 NezhaService )
+// ---------------------------------------------------------------
+const PROTO_CONTENT = `
+syntax = "proto3";
+option go_package = "./proto";
+package proto;
+
+service NezhaService {
+  rpc ReportSystemState(stream State) returns (stream Receipt) {}
+  rpc ReportSystemInfo(Host) returns (Receipt) {}
+  rpc RequestTask(stream TaskResult) returns (stream Task) {}
+  rpc ReportGeoIP(GeoIP) returns (GeoIP) {}
+  rpc ReportSystemInfo2(Host) returns (Uint64Receipt) {}
+}
+
+message Host {
+  string platform = 1;
+  string platform_version = 2;
+  repeated string cpu = 3;
+  uint64 mem_total = 4;
+  uint64 disk_total = 5;
+  uint64 swap_total = 6;
+  string arch = 7;
+  string virtualization = 8;
+  uint64 boot_time = 9;
+  string version = 10;
+  repeated string gpu = 11;
+}
+
+message State {
+  double cpu = 1;
+  uint64 mem_used = 2;
+  uint64 swap_used = 3;
+  uint64 disk_used = 4;
+  uint64 net_in_transfer = 5;
+  uint64 net_out_transfer = 6;
+  uint64 net_in_speed = 7;
+  uint64 net_out_speed = 8;
+  uint64 uptime = 9;
+  double load1 = 10;
+  double load5 = 11;
+  double load15 = 12;
+  uint64 tcp_conn_count = 13;
+  uint64 udp_conn_count = 14;
+  uint64 process_count = 15;
+  repeated State_SensorTemperature temperatures = 16;
+  repeated double gpu = 17;
+}
+
+message State_SensorTemperature {
+  string name = 1;
+  double temperature = 2;
+}
+
+message Receipt { bool proced = 1; }
+message Uint64Receipt { uint64 data = 1; }
+
+message GeoIP {
+  bool use6 = 1;
+  IP ip = 2;
+  string country_code = 3;
+  uint64 dashboard_boot_time = 4;
+}
+
+message IP {
+  string ipv4 = 1;
+  string ipv6 = 2;
+}
+
+message Task {
+  uint64 id = 1;
+  uint64 type = 2;
+  string data = 3;
+}
+
+message TaskResult {
+  uint64 id = 1;
+  uint64 type = 2;
+  float delay = 3;
+  string data = 4;
+  bool successful = 5;
+}
+`;
+
+/**
+ * 把 proto 写到临时文件再加载 —— @grpc/proto-loader 只接受文件路径。
+ * 加载完立即删除，避免残留(文件名带 pid 防止并发冲突)。
+ */
+function loadProto() {
+    const tmpFile = path.join(os.tmpdir(), `nezha_${process.pid}.proto`);
+    fs.writeFileSync(tmpFile, PROTO_CONTENT);
+    try {
+        const def = protoLoader.loadSync(tmpFile, {
+            keepCase: false,
+            longs: Number,
+            enums: Number,
+            defaults: true,
+            oneofs: true,
+        });
+        return grpc.loadPackageDefinition(def).proto;
+    } finally {
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+    }
+}
+
+/** gRPC 鉴权 metadata —— 面板用 client-secret / client-uuid 识别客户端 */
+function buildMetadata() {
+    const meta = new grpc.Metadata();
+    meta.add('client-secret', NEZHA_KEY);
+    meta.add('client-uuid', UUID);
+    // 兼容部分版本的字段命名
+    meta.add('client_secret', NEZHA_KEY);
+    meta.add('client_uuid', UUID);
+    return meta;
+}
+
+// ---------------------------------------------------------------
+// 系统信息采集
+// ---------------------------------------------------------------
+
+// 虚拟网卡/容器网卡不计入流量，避免上报虚高
+const EXCLUDE_INTERFACES = [
+    'lo', 'tun', 'docker', 'veth', 'br-', 'vmbr', 'vnet',
+    'kube', 'Meta', 'tailscale', 'fw', 'tap'
+];
+const shouldExcludeInterface = (name) => EXCLUDE_INTERFACES.some((ex) => name.includes(ex));
+
+// 只统计真实文件系统，容器里的 overlay/tmpfs 不算
+const EXPECT_FS_TYPES = new Set([
+    'apfs', 'ext4', 'ext3', 'ext2', 'f2fs', 'reiserfs', 'jfs', 'bcachefs',
+    'btrfs', 'fuseblk', 'zfs', 'simfs', 'ntfs', 'fat32', 'exfat', 'xfs', 'fuse.rclone'
+]);
+
+function getArch() {
+    switch (process.arch) {
+        case 'x64': return 'x86_64';
+        case 'arm64': return 'aarch64';
+        case 'ia32': return 'i386';
+        default: return process.arch;
+    }
+}
+
+/** 汇总本机静态信息( CPU 型号 / 内存 / 磁盘 / 架构 / 开机时间 ) */
+async function getHost() {
+    const [osInfo, cpuInfo, memInfo, fsSize] = await Promise.all([
+        si.osInfo(), si.cpu(), si.mem(), si.fsSize(),
+    ]);
+
+    let diskTotal = 0;
+    for (const f of fsSize) {
+        if (EXPECT_FS_TYPES.has((f.type || '').toLowerCase())) diskTotal += f.size || 0;
+    }
+
+    return {
+        platform: osInfo.distro || process.platform,
+        platformVersion: osInfo.release || '',
+        cpu: [`${cpuInfo.manufacturer} ${cpuInfo.brand} ${cpuInfo.cores} Physical Core`],
+        memTotal: memInfo.total,
+        diskTotal,
+        swapTotal: memInfo.swaptotal || 0,
+        arch: getArch(),
+        virtualization: '',
+        bootTime: Math.floor(Date.now() / 1000 - os.uptime()),
+        version: AGENT_VERSION,
+        gpu: [],
+    };
+}
+
+// 网络累计流量与瞬时速率
+let netInTransfer = 0, netOutTransfer = 0;
+let netInSpeed = 0, netOutSpeed = 0;
+let lastNetUpdate = 0;
+
+/** 采样网卡累计字节数，与上次差值算出速率 */
+async function trackNetworkSpeed() {
+    try {
+        const stats = await si.networkStats();
+        let innerIn = 0, innerOut = 0;
+        for (const iface of stats) {
+            if (shouldExcludeInterface(iface.iface)) continue;
+            innerIn += iface.rx_bytes || 0;
+            innerOut += iface.tx_bytes || 0;
+        }
+        const now = Math.floor(Date.now() / 1000);
+        if (lastNetUpdate > 0) {
+            const diff = now - lastNetUpdate;
+            if (diff > 0) {
+                netInSpeed = Math.max(0, (innerIn - netInTransfer) / diff);
+                netOutSpeed = Math.max(0, (innerOut - netOutTransfer) / diff);
+            }
+        }
+        netInTransfer = innerIn;
+        netOutTransfer = innerOut;
+        lastNetUpdate = now;
+    } catch (e) { /* 采样失败不影响主循环 */ }
+}
+
+/** 从 /proc/net/* 统计 TCP / UDP 连接数 */
+function getConnCount() {
+    if (process.platform !== 'linux') return [0, 0];
+    try {
+        const count = (p) => {
+            try {
+                return Math.max(0, fs.readFileSync(p, 'utf8').split('\n').length - 2);
+            } catch (_) {
+                return 0;
+            }
+        };
+        const tcp = count('/proc/net/tcp') + count('/proc/net/tcp6');
+        const udp = count('/proc/net/udp') + count('/proc/net/udp6');
+        return [tcp, udp];
+    } catch (_) {
+        return [0, 0];
+    }
+}
+
+/** 数 /proc 下的数字目录 = 进程数 */
+function getProcessCountSync() {
+    if (process.platform !== 'linux') return -1;
+    try {
+        let n = 0;
+        for (const d of fs.readdirSync('/proc')) {
+            if (/^\d+$/.test(d)) n++;
+        }
+        return n;
+    } catch (_) {
+        return 0;
+    }
+}
+
+/** 采集一次实时状态 */
+async function getState() {
+    const [currentLoad, memInfo, fsSize] = await Promise.all([
+        si.currentLoad(), si.mem(), si.fsSize(),
+    ]);
+
+    let memUsed;
+    if (process.platform === 'linux' && memInfo.active) {
+        memUsed = memInfo.active;                       // Linux 用 active( 排除 cache )
+    } else if (process.platform === 'linux') {
+        memUsed = Math.max(0, (memInfo.used || 0) - (memInfo.buffcache || 0));
+    } else {
+        memUsed = memInfo.used || 0;
+    }
+
+    let diskUsed = 0;
+    for (const f of fsSize) {
+        if (EXPECT_FS_TYPES.has((f.type || '').toLowerCase())) diskUsed += f.used || 0;
+    }
+
+    const load = os.loadavg();
+    let processCount = getProcessCountSync();
+    if (processCount < 0) {
+        try {
+            const procs = await si.processes();
+            processCount = procs.all || 0;
+        } catch (_) {
+            processCount = 0;
+        }
+    }
+
+    const [tcpConn, udpConn] = getConnCount();
+
+    return {
+        cpu: currentLoad.currentLoad || 0,
+        memUsed,
+        swapUsed: memInfo.swapused || 0,
+        diskUsed,
+        netInTransfer,
+        netOutTransfer,
+        netInSpeed: Math.floor(netInSpeed),
+        netOutSpeed: Math.floor(netOutSpeed),
+        uptime: Math.floor(os.uptime()),
+        load1: load[0] || 0,
+        load5: load[1] || 0,
+        load15: load[2] || 0,
+        tcpConnCount: tcpConn,
+        udpConnCount: udpConn,
+        processCount,
+        temperatures: [],
+        gpu: [],
+    };
+}
+
+// ---------------------------------------------------------------
+// GeoIP 上报( 让面板按 IP 归类节点 )
+// ---------------------------------------------------------------
+
+let lastReportedIP = null;
+
+/** 强制指定 IP 协议族，避免容器内 IPv6 不可达导致长时间挂起 */
+function makeLookup(family) {
+    return (hostname, opts, callback) => dns.lookup(hostname, { family }, callback);
+}
+
+function parseIPFromResponse(body, family) {
+    const trimmed = String(body).trim();
+    if (family === 4 && net.isIPv4(trimmed)) return trimmed;
+    if (family === 6 && net.isIPv6(trimmed)) return trimmed;
+    // Cloudflare 的 /cdn-cgi/trace 返回多行 "ip=xxx" 格式
+    for (const line of trimmed.split('\n')) {
+        if (line.startsWith('ip=')) {
+            const ip = line.substring(3).trim();
+            if (family === 4 && net.isIPv4(ip)) return ip;
+            if (family === 6 && net.isIPv6(ip)) return ip;
+        }
+    }
+    return '';
+}
+
+async function fetchIP() {
+    const v4 = ['https://ipv4.ip.sb/ip', 'https://blog.cloudflare.com/cdn-cgi/trace', 'https://developers.cloudflare.com/cdn-cgi/trace'];
+    const v6 = ['https://ipv6.ip.sb/ip', 'https://blog.cloudflare.com/cdn-cgi/trace', 'https://developers.cloudflare.com/cdn-cgi/trace'];
+
+    const from = (endpoints, family) => async () => {
+        for (const url of endpoints) {
+            const ip = await new Promise((resolve) => {
+                const req = https.get(
+                    url,
+                    { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' }, lookup: makeLookup(family) },
+                    (res) => {
+                        let data = '';
+                        res.on('data', (c) => (data += c));
+                        res.on('end', () => resolve(parseIPFromResponse(data, family)));
+                    }
+                );
+                req.on('error', () => resolve(''));
+                req.on('timeout', () => { req.destroy(); resolve(''); });
+            });
+            if (ip) return ip;
+        }
+        return '';
+    };
+
+    const [ipv4, ipv6] = await Promise.all([from(v4, 4)(), from(v6, 6)()]);
+    return { ipv4, ipv6 };
+}
+
+async function reportGeoIP(client, metadata, forceUpdate = false) {
+    try {
+        const { ipv4, ipv6 } = await fetchIP();
+        const key = ipv4 || ipv6 || '';
+
+        // IP 没变且非强制刷新时跳过，省一次外部请求
+        if (!forceUpdate && lastReportedIP !== null && key === lastReportedIP) return true;
+
+        log('[GeoIP] 上报 IP:', key || '(空，面板将使用连接来源地址)');
+
+        const ok = await new Promise((resolve) => {
+            const timer = setTimeout(() => { logErr('[GeoIP] RPC 超时'); resolve(false); }, 15000);
+            client.ReportGeoIP(
+                { use6: false, ip: { ipv4: ipv4 || '', ipv6: ipv6 || '' } },
+                metadata,
+                (err) => {
+                    clearTimeout(timer);
+                    if (err) { logErr('[GeoIP] 上报失败:', err.message); resolve(false); }
+                    else resolve(true);
+                }
+            );
+        });
+
+        if (ok) lastReportedIP = key;
+        return ok;
+    } catch (e) {
+        logErr('[GeoIP] 异常:', e.message);
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------
+// 工具
+// ---------------------------------------------------------------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function callWithTimeout(fn, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+        fn((err, resp) => {
+            clearTimeout(timer);
+            if (err) reject(err);
+            else resolve(resp);
+        });
+    });
+}
+
+// ---------------------------------------------------------------
+// 主循环 —— 建连 / 上报 / 断线重连
+// ---------------------------------------------------------------
+async function startNezhaAgent() {
+    // 开关显式关闭: 静默跳过( 便于排障时临时静默上报, 不必清空密钥 )
+    if (!NEZHA_ENABLED) {
+        log('[Nezha] NEZHA_ENABLED=false, 监控上报已关闭');
+        return false;
+    }
+
+    // 未配置即静默跳过，不影响面板功能
+    if (!NEZHA_SERVER || !NEZHA_KEY) return false;
+
+    if (!si) {
+        console.error('[Nezha] 缺少 systeminformation 依赖，跳过哪吒上报（面板功能不受影响）');
+        return false;
+    }
+    if (!grpc || !protoLoader) {
+        console.error('[Nezha] 缺少 @grpc/grpc-js 或 @grpc/proto-loader 依赖，跳过哪吒上报（面板功能不受影响）');
+        return false;
+    }
+
+    const useTLS = shouldUseTLS(NEZHA_SERVER);
+    log('[Nezha] 面板:', NEZHA_SERVER, '| TLS:', useTLS ? '启用' : '禁用', '| UUID:', UUID);
+
+    const proto = loadProto();
+    const credentials = useTLS
+        ? grpc.credentials.createSsl()
+        : grpc.credentials.createInsecure();
+    const metadata = buildMetadata();
+
+    let lastReportHostInfo = 0;
+    let lastReportIPInfo = 0;
+    let geoipReported = false;
+
+    // 无限重连 —— 面板/网络恢复后自动接上
+    for (;;) {
+        let client = null;
+        let stateStream = null;
+        let workerCancelled = false;
+
+        try {
+            client = new proto.NezhaService(NEZHA_SERVER, credentials);
+            console.log('nzbot is running...');
+
+            // 首次上报静态信息，拿回 dashboard bootTime 作为会话基准
+            const hostInfo = await getHost();
+            const receipt = await callWithTimeout(
+                (cb) => client.ReportSystemInfo2(hostInfo, metadata, cb),
+                NETWORK_TIMEOUT
+            );
+            log('[Agent] 静态信息上报成功, dashboard bootTime:', receipt.data || 0);
+
+            // GeoIP 首次强制上报
+            geoipReported = false;
+            try {
+                if (await reportGeoIP(client, metadata, true)) {
+                    lastReportIPInfo = Date.now();
+                    geoipReported = true;
+                }
+            } catch (e) {
+                logErr('[GeoIP] 首次上报异常:', e.message);
+            }
+
+            // 打开状态上报流
+            stateStream = client.ReportSystemState(metadata);
+            log('[Agent] ReportSystemState 流已连接');
+
+            while (!workerCancelled) {
+                try {
+                    await trackNetworkSpeed();
+                    const state = await getState();
+
+                    // 写一条状态并等 Receipt 回执
+                    await new Promise((resolve, reject) => {
+                        stateStream.write(state, (err) => (err ? reject(err) : resolve()));
+                    });
+                    await new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => {
+                            stateStream.removeListener('data', onReceipt);
+                            stateStream.removeListener('error', onError);
+                            reject(new Error('receipt timeout'));
+                        }, NETWORK_TIMEOUT);
+                        const onReceipt = (msg) => { clearTimeout(timer); stateStream.removeListener('error', onError); resolve(msg); };
+                        const onError = (err) => { clearTimeout(timer); stateStream.removeListener('data', onReceipt); reject(err); };
+                        stateStream.once('data', onReceipt);
+                        stateStream.once('error', onError);
+                    });
+
+                    const now = Date.now();
+
+                    // 每 10 分钟刷新一次静态信息( CPU 型号等可能不变，但保持协议一致性 )
+                    if (now - lastReportHostInfo > 10 * 60 * 1000) {
+                        try {
+                            const hostRefresh = await getHost();
+                            await callWithTimeout(
+                                (cb) => client.ReportSystemInfo2(hostRefresh, metadata, cb),
+                                10000
+                            );
+                            lastReportHostInfo = now;
+                        } catch (e) { /* 刷新失败不影响主循环 */ }
+                    }
+
+                    // IP 变更检测
+                    if (now - lastReportIPInfo > IP_REPORT_PERIOD * 1000 || !geoipReported) {
+                        if (await reportGeoIP(client, metadata, !geoipReported)) {
+                            lastReportIPInfo = now;
+                            geoipReported = true;
+                        }
+                    }
+                } catch (err) {
+                    logErr('[Agent] 上报循环异常:', err.message);
+                    workerCancelled = true;
+                    break;
+                }
+                await sleep(REPORT_DELAY * 1000);
+            }
+        } catch (err) {
+            logErr('[Agent] 连接异常:', err.message);
+        } finally {
+            try { if (stateStream) stateStream.end(); } catch (e) {}
+            try { if (client) client.close(); } catch (e) {}
+        }
+
+        log('[Agent] 准备重连...');
+        await sleep(RETRY_DELAY * 1000);
+    }
+}
+
+module.exports = { startNezhaAgent };

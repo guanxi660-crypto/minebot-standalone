@@ -54,6 +54,15 @@
             </div>
         </div>
 
+        <!-- 原生核心服务控制条: 开关/状态/启停 -->
+        <div id="core-bar" class="monitor-bar glass" style="left: auto; right: 1.5rem;">
+            <div class="flex flex-col">
+                <span class="text-[11px] uppercase font-black text-slate-500">Core Service</span>
+                <span id="core-status" class="text-[11px] font-bold text-slate-300">加载中…</span>
+            </div>
+            <button id="core-toggle" onclick="toggleCore()" class="bg-blue-600 px-4 py-2 rounded-xl text-[11px] font-black active:scale-95 transition-all">启动</button>
+        </div>
+
         <script>
             let drafts = {}; 
             const TOKEN_KEY = 'pfp_token';
@@ -91,6 +100,46 @@
                 localStorage.removeItem(TOKEN_KEY);
                 showLogin();
             }
+
+            // --- [ 原生核心服务控制 ] ---
+            // 与后端 /api/core 对应: start | stop | status
+            async function coreAction(action) {
+                if (!authToken) return null;
+                const r = await fetch('/api/core', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                return await r.json();
+            }
+            async function refreshCoreStatus() {
+                if (!authToken) return;
+                const d = await coreAction('status');
+                if (!d || !d.success) return;
+                const el = document.getElementById('core-status');
+                const btn = document.getElementById('core-toggle');
+                if (el) el.innerText = d.detail;
+                if (btn) {
+                    // running/starting 时按钮变"停止", 否则变"启动"
+                    const isRunning = d.status === 'running' || d.status === 'starting';
+                    btn.innerText = isRunning ? '停止' : '启动';
+                    btn.className = 'px-4 py-2 rounded-xl text-[11px] font-black active:scale-95 transition-all ' +
+                        (isRunning ? 'bg-red-600' : 'bg-blue-600');
+                }
+            }
+            async function toggleCore() {
+                const d = await coreAction('status');
+                if (!d || !d.success) return;
+                const isRunning = d.status === 'running' || d.status === 'starting';
+                const btn = document.getElementById('core-toggle');
+                if (btn) { btn.innerText = '处理中…'; btn.disabled = true; }
+                const res = await coreAction(isRunning ? 'stop' : 'start');
+                if (btn) btn.disabled = false;
+                if (res && !res.success) alert('❌ ' + (res.error || '操作失败'));
+                else if (res) alert(res.detail || (isRunning ? '已停止' : '已启动'));
+                await refreshCoreStatus();
+            }
+
             function saveDraft(botId, field, val) { if (!drafts[botId]) drafts[botId] = {}; drafts[botId][field] = val; }
             function getDraft(botId, field, fallback) { return (drafts[botId] && drafts[botId][field] !== undefined) ? drafts[botId][field] : (fallback || ''); }
             
@@ -180,10 +229,11 @@ async function updateUI(force = false) {
                             <div class="flex gap-2 mb-2"><button onclick="savePto('${b.id}')" class="flex-1 bg-slate-800 text-[11px] py-1.5 rounded-lg font-bold">保存</button><button onclick="testPanel('${b.id}')" class="flex-1 bg-teal-600 text-[11px] py-1.5 rounded-lg font-bold">连接测试</button><button onclick="openFiles('${b.id}')" class="flex-1 bg-blue-600 text-[11px] py-1.5 rounded-lg font-bold">📁 文件</button></div>
                             <div class="flex gap-2"><button onclick="pteroPower('${b.id}','restart')" class="flex-1 bg-amber-600 text-[11px] py-1.5 rounded-lg font-bold">↻ 重启服务器</button><button onclick="pteroPower('${b.id}','start')" class="flex-1 bg-emerald-700 text-[11px] py-1.5 rounded-lg font-bold">▶ 启动</button><button onclick="pteroPower('${b.id}','stop')" class="flex-1 bg-red-700 text-[11px] py-1.5 rounded-lg font-bold">⏹ 停止</button></div>
                         </div>
-                        <div class="grid grid-cols-3 gap-2 mb-4">
+                        <div class="grid grid-cols-4 gap-2 mb-4">
                             <button onclick="toggle('${b.id}','ai')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.ai?'bg-blue-600':'bg-slate-800'}">👁️ AI视角</button>
                             <button onclick="toggle('${b.id}','walk')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.walk?'bg-emerald-600':'bg-slate-800'}">👣 巡逻</button>
                             <button onclick="toggle('${b.id}','chat')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.chat?'bg-orange-600':'bg-slate-800'}">💬 喊话</button>
+                            <button onclick="toggle('${b.id}','mine')" class="py-2 rounded-xl text-[11px] font-bold ${b.settings.mine?'bg-amber-600':'bg-slate-800'}">⛏️ 找矿</button>
                         </div>
                         <div class="log-box bg-black/60 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[11px] border border-white/5">
                             ${b.logs.map(l => `<div class="mb-1 ${l.color}"><span class="opacity-30 mr-1">[${l.time}]</span>${l.msg}</div>`).join('')}
@@ -191,7 +241,7 @@ async function updateUI(force = false) {
                     </div>
                 `).join('');
             }
-            setInterval(() => { updateUI(false); updateSystemStatus(); }, 3000);
+            setInterval(() => { updateUI(false); updateSystemStatus(); refreshCoreStatus(); }, 3000);
             if (!authToken) showLogin();
             updateUI(true);
         </script>

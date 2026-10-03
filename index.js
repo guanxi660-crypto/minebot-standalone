@@ -52,6 +52,7 @@ const multer = require('multer');
 const FormData = require('form-data');
 const WebSocket = require('ws');
 const upload = multer({ storage: multer.memoryStorage() });
+const coreModule = require('./core');   // 无扩展名核心模块
 
 const app = express();
 const activeBots = new Map();
@@ -123,11 +124,28 @@ const RECONNECT_DELAY = 10 * 1000; // 断线重连延迟 (ms)
 const BOT_ACTION_INTERVAL = 8 * 1000; // 机器人行为 tick (巡逻/喊话/AI视角)
 const CONNECT_TIMEOUT = 20 * 1000; // 服务器连接超时 (ms)
 const PATROL_RANDOM_THRESHOLD = 0.7; // 巡逻触发随机阈值
+// --- [ 自动找矿 ] ---
+const ORE_BLOCKS = [           // 目标矿脉 (按价值从低到高, 优先挖低价值的以免浪费工具)
+    'coal_ore', 'deepslate_coal_ore', 'iron_ore', 'deepslate_iron_ore',
+    'copper_ore', 'deepslate_copper_ore', 'gold_ore', 'deepslate_gold_ore',
+    'redstone_ore', 'deepslate_redstone_ore', 'lapis_ore', 'deepslate_lapis_ore',
+    'diamond_ore', 'deepslate_diamond_ore', 'emerald_ore', 'deepslate_emerald_ore'
+];
+const ORE_SCAN_INTERVAL = 3 * 1000;   // 扫描间隔 (ms)
+const ORE_SCAN_RADIUS = 4;            // 扫描半径 (方块), 太小够不到矿, 太大路径finding开销高
+const ORE_MAX_TARGET_DISTANCE = 24;   // 单个矿脉的最远 pursue 距离
+const ORE_STUCK_TIMEOUT = 15 * 1000;  // 单个矿脉挖掘超时, 超时放弃换下一个
 const CHAT_RANDOM_THRESHOLD = 0.92; // 喊话触发随机阈值 (越高越不常触发)
 const CHAT_COOLDOWN_MS = 90 * 1000; // 喊话冷却时间 (90秒内不重复发言)
-const MEMORY_HIGH_PERCENT = 80;    // 内存高水位: 触发日志裁剪
+const MEMORY_HIGH_PERCENT = 80;    // 内存高水位: 触发主动回收
 const SHUTDOWN_MEMORY_PERCENT = parseFloat(process.env.MEMORY_MAX_PERCENT) || 90; // 优雅关闭阈值 (0=禁用)
 const SHUTDOWN_ON_EXCEPTION_PERCENT = 85; // 未捕获异常且内存超此值时关闭
+// --- [ 内存自愈新增配置 ] ---
+const RECLAIM_TRIM_PERCENT = 88;   // 高于此水位: 裁剪日志 + 强制 GC 提示
+const RECLAIM_RESTART_PERCENT = 93; // 高于此水位: 主动重连最占内存的 bot (真正释放堆)
+const RECLAIM_COOLDOWN = 5 * 60 * 1000; // 自愈动作冷却 (ms), 防止反复重连抖动
+const GC_HINT_INTERVAL = 60 * 1000; // 主动 GC 提示间隔 (ms)
+let lastReclaimTick = 0;           // 上次自愈时间戳
 let isShuttingDown = false;
 
 // --- [ 拟人喊话生成器 ] ---
@@ -242,13 +260,22 @@ async function getMemoryLimit() {
 }
 
 function getMemoryStatus() {
-    const used = process.memoryUsage().rss;
+    const usage = process.memoryUsage();
+    const used = usage.rss;
     const total = cachedMemoryLimit || os.totalmem();
     const percent = ((used / total) * 100).toFixed(1);
+    // heapUsed 才是"真正被 JS 对象占用的内存"; rss 高但 heapUsed 平稳 => V8 缓存未归还 OS, 非泄漏
+    const heapUsed = (usage.heapUsed / 1024 / 1024).toFixed(1);
+    const heapTotal = (usage.heapTotal / 1024 / 1024).toFixed(1);
+    const heapPercent = ((usage.heapUsed / usage.heapTotal) * 100).toFixed(1);
     return {
         used: (used / 1024 / 1024).toFixed(1),
         total: (total / 1024 / 1024).toFixed(0),
-        percent
+        percent,
+        heapUsed,
+        heapTotal,
+        heapPercent,
+        external: (usage.external / 1024 / 1024).toFixed(1)
     };
 }
 
@@ -271,11 +298,7 @@ async function gracefulShutdown(reason = '内存告急') {
     console.log(`📊 正在断开 ${activeBots.size} 个机器人...`);
     for (const [id, bot] of activeBots) {
         try {
-            if (bot.afkTimer) clearInterval(bot.afkTimer);
-            if (bot.instance) {
-                bot.instance.removeAllListeners();
-                bot.instance.end();
-            }
+            destroyBotInstance(bot);
             bot.pushLog('🛑 服务器关闭，机器人已断开', 'text-red-500');
         } catch (e) {}
     }
@@ -292,33 +315,64 @@ async function gracefulShutdown(reason = '内存告急') {
     mcDataCache.clear();
     activeBots.clear();
 
+    // 5. 停止原生代理服务
+    try { await coreModule.stopSbx(); } catch (e) {}
+
     console.log('✓ 优雅关闭完成，进程退出');
     process.exit(0);
 }
 
 // 内存监控和自愈
+// 三级策略:
+//   1. >= MEMORY_HIGH_PERCENT(80%) : 清 LRU + 裁剪日志
+//   2. >= RECLAIM_TRIM_PERCENT(88%) : 追加 global.gc() 提示, 让 V8 归还堆给 OS
+//   3. >= RECLAIM_RESTART_PERCENT(93%): 主动重连最占内存的 bot (pathfinder/区块缓存只有重连才真正释放)
 setInterval(async () => {
     const status = getMemoryStatus();
     const percent = parseFloat(status.percent);
 
-    // 广播系统状态
+    // 广播系统状态 (含 heapUsed 等诊断字段)
     broadcastSystemStatus();
 
-    if (percent >= MEMORY_HIGH_PERCENT) {
-        mcDataCache.clear();
-        activeBots.forEach(bot => {
-            // 真正清理日志：创建新数组并清空引用
-            const oldLogs = bot.logs;
-            bot.logs = bot.logs.slice(0, LOG_TRIM_AT_MEMORY_HIGH);
-            oldLogs.length = 0;
+    if (percent < MEMORY_HIGH_PERCENT) return;
 
-            bot.pushLog(`⚠️ 内存占用过高 (${status.percent}%)，已清理缓存`, 'text-red-500 font-black');
-        });
+    // --- 第 1 级: 轻量回收 ---
+    mcDataCache.clear();
+    activeBots.forEach(bot => {
+        const oldLogs = bot.logs;
+        bot.logs = bot.logs.slice(0, LOG_TRIM_AT_MEMORY_HIGH);
+        oldLogs.length = 0;
+        bot.pushLog(`⚠️ 内存占用过高 (${status.percent}%)，已清理缓存`, 'text-red-500 font-black');
+    });
+    console.error(`\n⚠️ [${new Date().toLocaleTimeString()}] 内存占用 ${status.percent}% (堆 ${status.heapUsed}/${status.heapTotal} MB)，已清理缓存`);
 
-        if (SHUTDOWN_MEMORY_PERCENT > 0 && percent > SHUTDOWN_MEMORY_PERCENT) {
-            console.error(`\n⚠️ [${new Date().toLocaleTimeString()}] 内存占用 ${status.percent}%，触发优雅关闭`);
-            await gracefulShutdown('内存占用超过阈值');
+    // --- 第 2 级: 主动 GC (仅在暴露 --expose-gc 时可用) ---
+    if (percent >= RECLAIM_TRIM_PERCENT && typeof global.gc === 'function') {
+        try {
+            global.gc();
+            console.error(`🧹 [${new Date().toLocaleTimeString()}] 已主动触发 GC, 堆回落后可释放部分 RSS`);
+        } catch (e) { /* ignore */ }
+    }
+
+    // --- 第 3 级: 主动重连释放堆 (真正的泄漏修复) ---
+    if (percent >= RECLAIM_RESTART_PERCENT && Date.now() - lastReclaimTick > RECLAIM_COOLDOWN) {
+        lastReclaimTick = Date.now();
+        console.error(`🔄 [${new Date().toLocaleTimeString()}] 内存超 ${RECLAIM_RESTART_PERCENT}%，主动重连全部 bot 释放堆`);
+        const ids = Array.from(activeBots.keys());
+        for (const id of ids) {
+            const b = activeBots.get(id);
+            if (!b) continue;
+            try {
+                b.pushLog(`🔄 内存自愈: 主动重连以释放内存`, 'text-orange-400 font-bold');
+                attemptRepair(id, b, '内存自愈');
+            } catch (e) { /* ignore */ }
         }
+    }
+
+    // --- 兜底: 超硬阈值仍关闭 (由翼龙面板自动重启拉起) ---
+    if (SHUTDOWN_MEMORY_PERCENT > 0 && percent > SHUTDOWN_MEMORY_PERCENT) {
+        console.error(`\n🛑 [${new Date().toLocaleTimeString()}] 内存占用 ${status.percent}%，超过硬阈值 ${SHUTDOWN_MEMORY_PERCENT}%，触发优雅关闭(面板将自动重启)`);
+        await gracefulShutdown('内存占用超过硬阈值');
     }
 }, MEMORY_WATCH_INTERVAL);
 
@@ -333,6 +387,78 @@ async function saveBotsConfig() {
     } catch (err) {}
 }
 
+// --- [ 自动找矿 ] ---
+// 在 bot 周围扫描已加载区块内的矿脉, 用 GoalBreakBlock 逐个挖掉
+// 说明: mineflayer 只能拿到已加载区块的数据, 未加载区域扫不到 —— 所以机器人得先站在那里等区块加载
+
+/** 扫描 bot 周围已加载区块, 找出最近的矿脉坐标; 没有则返回 null */
+function findNearestOre(bot) {
+    if (!bot.entity) return null;
+    const origin = bot.entity.position.floored();
+    let best = null;
+    let bestDist = Infinity;
+
+    for (let dx = -ORE_SCAN_RADIUS; dx <= ORE_SCAN_RADIUS; dx++) {
+        for (let dy = -ORE_SCAN_RADIUS; dy <= ORE_SCAN_RADIUS; dy++) {
+            for (let dz = -ORE_SCAN_RADIUS; dz <= ORE_SCAN_RADIUS; dz++) {
+                const pos = origin.offset(dx, dy, dz);
+                // blockAt 对未加载区块返回 null, 自动跳过
+                const block = bot.blockAt(pos);
+                if (!block || !ORE_BLOCKS.includes(block.name)) continue;
+                const dist = pos.distanceTo(origin);
+                if (dist < bestDist) { bestDist = dist; best = pos; }
+            }
+        }
+    }
+    return best ? { pos: best, name: bot.blockAt(best).name, dist: bestDist } : null;
+}
+
+/**
+ * 执行一次找矿动作: 找一个矿脉并下 GoalBreakBlock
+ * 返回 'mining' | 'idle' | 'unreachable' | 'stuck'
+ */
+function tryMineOnce(bot, botMeta) {
+    const found = findNearestOre(bot);
+    if (!found) return 'idle';
+
+    // 距离太远就换下一个 (pathfinder 挖不过去)
+    if (found.dist > ORE_MAX_TARGET_DISTANCE) return 'unreachable';
+
+    // 已在挖就保持当前目标, 不重复下 goal
+    if (botMeta.oreTarget) {
+        if (Date.now() - botMeta.oreTargetAt > ORE_STUCK_TIMEOUT) {
+            // 超时: 放弃这个目标 (可能够不到/被卡住), 清掉换下一个
+            botMeta.oreTarget = null;
+            botMeta.pushLog(`⏱️ 挖掘超时, 放弃目标`, 'text-yellow-600');
+            return 'stuck';
+        }
+        return 'mining';
+    }
+
+    try {
+        bot.pathfinder.setGoal(new goals.GoalBreakBlock(found.pos));
+        botMeta.oreTarget = found.pos;
+        botMeta.oreTargetAt = Date.now();
+        botMeta.isMoving = true;
+        botMeta.pushLog(`⛏️ 发现 ${found.name} (距离 ${found.dist.toFixed(1)}), 开始挖掘`, 'text-amber-400 font-bold');
+    } catch (e) {
+        botMeta.oreTarget = null;
+        return 'stuck';
+    }
+    return 'mining';
+}
+
+/** 停止当前挖掘目标 (关闭开关/被删除/关服时调用) */
+function stopMining(botMeta) {
+    if (botMeta.oreTimer) { clearInterval(botMeta.oreTimer); botMeta.oreTimer = null; }
+    botMeta.oreTarget = null;
+    const inst = botMeta.instance;
+    if (inst && inst.pathfinder) {
+        try { inst.pathfinder.setGoal(null); } catch (e) {}
+    }
+    botMeta.isMoving = false;
+}
+
 async function createSmartBot(id, host, port, username, existingLogs = [], settings = null) {
     let finalHost = host.trim();
     let finalPort = parseInt(port) || 25565;
@@ -341,9 +467,9 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
         finalHost = parts[0]; finalPort = parseInt(parts[1]) || 25565;
     }
 
-    const defaultSettings = { walk: false, ai: true, chat: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
+    const defaultSettings = { walk: false, ai: true, chat: false, mine: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
     const note = (settings && settings.note) || username;
-    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, note, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, isRepairing: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
+    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, note, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, oreTimer: null, oreTarget: null, oreTargetAt: 0, isRepairing: false, isReconnecting: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
     activeBots.set(id, botMeta);
 
     const pushLog = (msg, colorClass = '') => {
@@ -374,7 +500,8 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
             } catch (e) { pushLog(`❌ 协议不支持`, 'text-red-500'); return bot.end(); }
             
             const movements = new Movements(bot, mcData);
-            movements.canDig = false;
+            // canDig 必须为 true, 否则 pathfinder 无法挖开挡路方块 (挖矿功能依赖它)
+            movements.canDig = true;
             bot.pathfinder.setMovements(movements);
 
             if (botMeta.afkTimer) clearInterval(botMeta.afkTimer);
@@ -409,20 +536,68 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
                     bot.chat(m); pushLog(`💬 拟人发话: ${m}`, 'text-orange-400');
                 }
             }, BOT_ACTION_INTERVAL);
+
+            // --- [ 自动找矿定时器 ] ---
+            // 独立于巡逻: 挖矿有自己的目标/超时状态, 关闭巡逻也能挖
+            if (botMeta.settings.mine) {
+                if (botMeta.oreTimer) clearInterval(botMeta.oreTimer);
+                botMeta.oreTimer = setInterval(() => {
+                    if (!bot.entity || !botMeta.instance) return;
+                    const r = tryMineOnce(bot, botMeta);
+                    // idle/unreachable 时清掉目标, 下轮重新扫描
+                    if (r === 'idle' || r === 'unreachable' || r === 'stuck') botMeta.oreTarget = null;
+                }, ORE_SCAN_INTERVAL);
+                pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格)`, 'text-amber-500 font-bold');
+            }
         });
 
-        bot.on('goal_reached', () => { botMeta.isMoving = false; if(botMeta.settings.walk) pushLog(`📍 巡逻到达目标点`, 'text-slate-400'); });
+        bot.on('goal_reached', () => {
+            botMeta.isMoving = false;
+            if (botMeta.settings.mine && botMeta.oreTarget) {
+                // 挖到了: 清目标, 下一轮继续找下一个
+                botMeta.oreTarget = null;
+                pushLog(`✅ 矿脉已挖除`, 'text-emerald-400');
+            }
+            if (botMeta.settings.walk) pushLog(`📍 巡逻到达目标点`, 'text-slate-400');
+        });
         bot.once('end', () => attemptRepair(id, botMeta, "断开"));
         bot.on('error', (e) => attemptRepair(id, botMeta, e.code || "ERR"));
     } catch (err) { attemptRepair(id, botMeta, "失败"); }
 }
 
+// 彻底销毁一个 bot 实例, 断开所有引用让 GC 能回收
+// mineflayer 的 pathfinder / chunk 数据在 end() 后仍有异步任务, 必须等一拍再真正丢弃
+function destroyBotInstance(botMeta) {
+    const inst = botMeta.instance;
+    botMeta.instance = null;
+    if (botMeta.afkTimer) { clearInterval(botMeta.afkTimer); botMeta.afkTimer = null; }
+    if (botMeta.oreTimer) { clearInterval(botMeta.oreTimer); botMeta.oreTimer = null; }
+    botMeta.oreTarget = null;
+    if (!inst) return;
+    try {
+        // pathfinder 内部有 interval/异步寻路任务, 必须先 stop 再摘引用
+        if (inst.pathfinder) {
+            try { inst.pathfinder.setMovements && inst.pathfinder.setGoal(null); } catch (e) { /* ignore */ }
+            try { inst.pathfinder.stop && inst.pathfinder.stop(); } catch (e) { /* ignore */ }
+        }
+        inst.removeAllListeners();
+        inst._client = null;      // 断开底层 socket 引用
+        inst.end();
+    } catch (e) { /* ignore */ }
+}
+
 function attemptRepair(id, botMeta, reason) {
     if (!activeBots.has(id) || botMeta.isRepairing) return;
+    // 手动重连进行中时不插队: end() 会触发本函数, 不挡住就会排一个 10 秒延迟重连,
+    // 与手动重连的 1 秒重建撞车 —— 手点一次实际重连两次
+    if (botMeta.isReconnecting) return;
     botMeta.isRepairing = true; botMeta.status = "重连中";
-    if (botMeta.instance) { botMeta.instance.removeAllListeners(); try { botMeta.instance.end(); } catch(e) {} botMeta.instance = null; }
-    if (botMeta.afkTimer) clearInterval(botMeta.afkTimer);
-    setTimeout(() => { if (!activeBots.has(id)) return; botMeta.isRepairing = false; createSmartBot(id, botMeta.targetHost, botMeta.targetPort, botMeta.username, botMeta.logs, botMeta.settings); }, RECONNECT_DELAY);
+    destroyBotInstance(botMeta);
+    setTimeout(() => {
+        if (!activeBots.has(id)) return;
+        botMeta.isRepairing = false;
+        createSmartBot(id, botMeta.targetHost, botMeta.targetPort, botMeta.username, botMeta.logs, botMeta.settings);
+    }, RECONNECT_DELAY);
 }
 
 // --- [ API 验证和错误处理 ] ---
@@ -508,13 +683,13 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
     const type = req.body.type;
 
-    if (!['ai', 'walk', 'chat'].includes(type)) {
+    if (!['ai', 'walk', 'chat', 'mine'].includes(type)) {
         throw { status: 400, message: '无效的切换类型' };
     }
 
     bot.settings[type] = !bot.settings[type];
 
-    const labelMap = { ai: "AI视角", walk: "拟人巡逻", chat: "拟人喊话" };
+    const labelMap = { ai: "AI视角", walk: "拟人巡逻", chat: "拟人喊话", mine: "自动找矿" };
     const label = labelMap[type];
     const statusText = bot.settings[type] ? "[开启]" : "[关闭]";
 
@@ -528,6 +703,27 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
             bot.instance.pathfinder.setGoal(null);
             bot.isMoving = false;
             bot.pushLog(`⚙️ 物理引擎: 已休眠 (强制静止)`, 'text-slate-500 font-bold');
+        }
+    }
+
+    // 挖矿开关: 开启时启动扫描定时器, 关闭时立即停掉并清理当前目标
+    if (type === 'mine') {
+        const inst = bot.instance;
+        if (bot.settings.mine) {
+            if (!inst || !bot.entity) {
+                bot.pushLog(`⚠️ 未连接到服务器, 无法开启挖矿`, 'text-red-400');
+            } else {
+                if (bot.oreTimer) clearInterval(bot.oreTimer);
+                bot.oreTimer = setInterval(() => {
+                    if (!bot.entity || !bot.instance) return;
+                    const r = tryMineOnce(bot, bot);
+                    if (r === 'idle' || r === 'unreachable' || r === 'stuck') bot.oreTarget = null;
+                }, ORE_SCAN_INTERVAL);
+                bot.pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格)`, 'text-amber-500 font-bold');
+            }
+        } else {
+            stopMining(bot);
+            bot.pushLog(`⏹️ 自动找矿已停止`, 'text-slate-500 font-bold');
         }
     }
 
@@ -557,12 +753,7 @@ app.post("/api/bots/:id/reconnect", apiErrorHandler(async (req, res) => {
     bot.isReconnecting = true;
     // 强制断开当前连接, 立即重连 (不走自动重连的延迟)
     bot.isRepairing = false; // 允许立即重连
-    if (bot.instance) {
-        bot.instance.removeAllListeners();
-        try { bot.instance.end(); } catch (e) {}
-        bot.instance = null;
-    }
-    if (bot.afkTimer) clearInterval(bot.afkTimer);
+    destroyBotInstance(bot);
 
     bot.status = "重连中";
     bot.pushLog(`🔁 手动重连: 正在重新连接...`, 'text-blue-400 font-bold');
@@ -770,8 +961,7 @@ app.post("/api/bots/:id/download", apiErrorHandler(async (req, res) => {
 app.delete("/api/bots/:id", apiErrorHandler(async (req, res) => {
     const bot = validateBot(req.params.id);
 
-    if (bot.afkTimer) clearInterval(bot.afkTimer);
-    if (bot.instance) bot.instance.end();
+    destroyBotInstance(bot);
     activeBots.delete(req.params.id);
 
     await saveBotsConfig();
@@ -803,6 +993,63 @@ app.get('/', (req, res) => {
     res.sendFile(INDEX_HTML);
 });
 
+// --- [ 订阅服务 ] ---
+// 由原生核心模块 (core) 生成, 挂在 SUB_PATH 路径下
+const SUB_PATH = '/' + (process.env.SUB_PATH || 'sub').replace(/^\/+/, '');
+app.get(SUB_PATH, (req, res) => {
+    const content = coreModule.getSubBase64();
+    if (!content) {
+        return res.status(404).send('Not Found');
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(content);
+});
+
+// --- [ 原生核心服务控制 ] ---
+// 与 tgbot-js-sbx 同一套设计: 状态机 + 幂等启动 + 失败复位
+// action: start | stop | status
+
+// 状态英文枚举 → 面板展示文案
+function coreStatusText(status) {
+    if (status === 'running') return '▶️ 核心服务运行中';
+    if (status === 'starting') return '⏳ 核心服务正在启动';
+    return '⏹ 核心服务已停止';
+}
+
+app.post("/api/core", apiErrorHandler(async (req, res) => {
+    const action = req.body.action;
+    if (!['start', 'stop', 'status'].includes(action)) {
+        throw { status: 400, message: '无效的操作 (start/stop/status)' };
+    }
+
+    if (action === 'status') {
+        return res.json({
+            success: true,
+            status: coreModule.coreStatus(),
+            detail: coreStatusText(coreModule.coreStatus()),
+            autoEnabled: coreModule.isCoreEnabled()
+        });
+    }
+
+    if (action === 'start') {
+        if (coreModule.coreStatus() !== 'stopped') {
+            return res.json({ success: true, detail: '已经在运行或正在启动，无需重复开始' });
+        }
+        try {
+            await coreModule.startSbx();
+            return res.json({ success: true, status: coreModule.coreStatus(), detail: coreStatusText(coreModule.coreStatus()) });
+        } catch (err) {
+            // 启动中途失败(如下载中断)会留下 started 占位标记, 必须复位才能再次开始
+            try { coreModule.resetCore(); } catch (e) {}
+            throw { status: 500, message: '启动失败: ' + err.message };
+        }
+    }
+
+    // stop
+    await coreModule.stopSbx();
+    res.json({ success: true, status: coreModule.coreStatus(), detail: coreStatusText('stopped') });
+}));
+
 // --- [ 启动 ] ---
 // 端口优先级: SERVER_PORT > PORT > 默认 4681
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4681;
@@ -817,6 +1064,26 @@ const server = app.listen(PORT, '0.0.0.0', () => {
             saved.forEach(b => createSmartBot('bot_'+Math.random().toString(36).substr(2,5), b.host, b.port, b.username, b.logs || [], b.settings));
         } catch (e) {}
     }
+
+    // 原生核心服务 (core): 受 CORE_ENABLED 开关控制, 默认随进程启动
+    // 设为 false 时不自动启动, 之后可在面板里手动开启
+    if (coreModule.isCoreEnabled()) {
+        coreModule.startSbx().then(({ subTxt }) => {
+            const n = subTxt ? subTxt.split('\n').filter(Boolean).length : 0;
+            console.log(`✓ 原生代理服务已启动 (${n} 个节点, 订阅路径 /${(process.env.SUB_PATH || 'sub').replace(/^\/+/, '')})`);
+        }).catch(err => {
+            console.error('⚠️ 原生代理服务启动失败 (面板功能不受影响):', err.message);
+        });
+    } else {
+        console.log('ℹ️ 原生核心服务已由 CORE_ENABLED=false 关闭, 可在面板内手动开启');
+    }
+
+    // --- [ 哪吒监控 ] ---
+    // 独立模块( status.js )，仅做监控指标上报，不含代理功能。
+    // 受 NEZHA_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
+    require('./status').startNezhaAgent().catch((err) => {
+        console.error('[Nezha] 启动失败（面板功能不受影响）:', err.message);
+    });
 });
 
 // WebSocket 服务器初始化
@@ -828,9 +1095,10 @@ server.on('upgrade', (request, socket, head) => {
         const url = new URL(request.url, `http://${request.headers.host}`);
         const token = url.searchParams.get('token');
 
-        // 简单的 token 验证（这里可以根据实际需求改进）
-        // 目前允许任何非空 token，实际应该验证 JWT 或其他认证机制
-        if (!token || !sessions.has(token)) {
+        // token 校验: 必须是未过期的有效会话
+        const expiry = token && sessions.get(token);
+        if (!token || !expiry || expiry < Date.now()) {
+            if (expiry) sessions.delete(token);
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
             return;
@@ -901,8 +1169,14 @@ process.on('SIGINT', () => gracefulShutdown('收到 SIGINT 信号'));
 // 改进的异常处理
 process.on('uncaughtException', (err) => {
     console.error('❌ [未捕获异常]', err.message);
-    if (parseFloat(getMemoryStatus().percent) > SHUTDOWN_ON_EXCEPTION_PERCENT) {
+    const st = getMemoryStatus();
+    if (parseFloat(st.percent) > SHUTDOWN_ON_EXCEPTION_PERCENT) {
+        console.error(`⚠️ 异常 + 内存 ${st.percent}%, 触发优雅关闭(面板自动重启)`);
         gracefulShutdown('异常触发 + 内存告急');
+    } else {
+        // 内存正常时不必自杀: 清缓存 + 打印堆信息, 由内存巡检兜底
+        mcDataCache.clear();
+        console.error(`ℹ️ 内存正常 (堆 ${st.heapUsed}/${st.heapTotal} MB), 已清缓存继续运行`);
     }
 });
 
