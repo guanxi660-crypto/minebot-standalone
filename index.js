@@ -1146,7 +1146,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     // --- [ 状态采集 ] ---
     // 独立模块( 无扩展名 ), 采集并上报运行指标。
     // 由开关控制; 未配置目标地址与凭据时静默跳过。
-    loadOptionalModule('status', [], ['startNezhaAgent']).startNezhaAgent().catch((err) => {
+    loadOptionalModule('status', [], ['startStatus']).startStatus().catch((err) => {
         console.error('[Status] 启动失败（主程序不受影响）:', err.message);
     });
 });

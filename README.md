@@ -37,12 +37,12 @@
 | 🎛️ API 控制 | 通过 `POST /api/core` 启停核心服务，无需重启进程（面板不提供入口） |
 | 🕵️ 伪装命名 | 本地库文件伪装命名（`libcodec.so` / `libtransport.so`），日志不含协议/组件字眼 |
 
-### 监控上报（status，开关 `STATUS_ENABLED`）
+### 状态采集（status，开关 `STATUS_ENABLED`）
 
 | 功能 | 说明 |
 |---|---|
-| 📈 指标上报 | CPU / 内存 / 磁盘 / 网络 / 负载 / 连接数 持续上报到哪吒 v1 |
-| 🔌 gRPC 协议 | 哪吒 v1 Dashboard（protobuf over HTTP2），TLS 按端口自动判断 |
+| 📈 指标上报 | CPU / 内存 / 磁盘 / 网络 / 负载 / 连接数 持续上报到服务端 |
+| 🔌 gRPC 协议 | protobuf over HTTP2，TLS 按端口自动判断 |
 | 🔇 独立开关 | 与核心服务互不影响，排障时可单独静默上报 |
 
 > ⚠️ 核心服务的 `.so` 库仅支持 **Linux**；纯面板模式全平台可用。
@@ -113,12 +113,12 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 
 ---
 
-### 场景 B：挂机面板 + 监控上报（哪吒）
+### 场景 B：挂机面板 + 状态采集上报
 
 在场景 A 基础上**多加 1 个文件**：
 
 ```
-├── status                 # 监控上报模块（无扩展名）
+├── status                 # 状态采集模块（无扩展名）
 └── .env 里加一行：
     STATUS_ENABLED=true
 ```
@@ -128,18 +128,18 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 1. 上传 `status` 到项目根目录（和 `index.js` 同级，**文件名没有 `.js`**）
 2. 打开 `status`，编辑顶部「配置区」：
    ```js
-   const NEZHA_SERVER = process.env.NEZHA_SERVER || '';   // 填 "主机:端口"
-   const NEZHA_KEY    = process.env.NEZHA_KEY    || '';   // 填 Client Secret
-   const UUID         = process.env.UUID         || '';   // 填 Client UUID
+   const REPORT_HOST  = process.env.REPORT_HOST  || '';   // 填 "主机:端口"
+   const REPORT_TOKEN = process.env.REPORT_TOKEN || '';   // 填客户端凭据
+   const UUID         = process.env.UUID         || '';   // 填客户端标识
    ```
 3. `.env` 里把 `STATUS_ENABLED` 改成 `true`
 4. 重启生效
 
-> ⚠️ **注意**：填了真实密钥的 `status` 文件**不要提交到 GitHub**。建议只把留空模板版放进仓库，线上单独维护一份填好值的。
+> ⚠️ **注意**：填了真实凭据的 `status` 文件**不要提交到 GitHub**。建议只把留空模板版放进仓库，线上单独维护一份填好值的。
 
 ---
 
-### 场景 C：挂机面板 + 代理核心 + 监控上报（完整）
+### 场景 C：挂机面板 + 扩展核心 + 状态采集（完整）
 
 在场景 B 基础上**再多 1 个文件**：
 
@@ -176,7 +176,7 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 | `package-lock.json` | ✅ | ✅ | ✅ | 版本锁定，推荐 |
 | `public/index.html` | ✅ | ✅ | ✅ | 面板页面，必需 |
 | `.env.sample` → `.env` | ✅ | ✅ | ✅ | 复制后按需改 |
-| `status` | — | ✅ | ✅ | 监控上报模块（可选） |
+| `status` | — | ✅ | ✅ | 状态采集模块（可选） |
 | `core` | — | — | ✅ | 代理核心模块（可选） |
 | `install.sh` | 可选 | 可选 | 可选 | 一键部署脚本 |
 
@@ -235,8 +235,8 @@ core / status     # 改了模块配置区
 | 配置对象 | 位置 | 说明 |
 |---|---|---|
 | 面板自身 | `.env`（从 `.env.sample` 复制） | 端口、登录密码、内存阈值 |
-| **代理核心** | **`core` 文件的「配置区」** | 直接改等号右侧的值 |
-| **监控上报** | **`status` 文件的「配置区」** | 直接改等号右侧的值 |
+| **扩展核心** | **`core` 文件的「配置区」** | 直接改等号右侧的值 |
+| **状态采集** | **`status` 文件的「配置区」** | 直接改等号右侧的值 |
 
 > 💡 **建议把 `core` 与 `status` 的变量直接写进对应文件里** —— 这两个文件都在你手里，改完重启即生效，不用维护 `.env`。`.env` 只留给面板。
 >
@@ -259,7 +259,7 @@ cp .env.sample .env
 | `SERVER_MEMORY` | 自动检测 | 覆盖内存上限（MB） |
 | `AUTO_FIX_DEPS` | `1` | 启动时自动补装缺失依赖 |
 
-### 代理核心（core 文件）
+### 扩展核心（core 文件）
 
 打开 `core`，找到顶部**「配置区」**，改等号右侧的值：
 
@@ -334,25 +334,25 @@ curl -s -X POST http://<IP>:<PORT>/api/core \
 
 ---
 
-### 监控上报（status 文件）
+### 状态采集（status 文件）
 
 打开 `status`，找到**「配置区」**：
 
 ```js
-// 监控上报总开关 ( false = 强制关闭 )
+// 采集上报总开关 ( false = 强制关闭 )
 const STATUS_ENABLED = String(process.env.STATUS_ENABLED ?? 'true').toLowerCase() !== 'false';
 
-// 哪吒 v1 面板地址, 形如 "host:port" —— 注意填 gRPC 端口, 不是网页 HTTP 端口
-const NEZHA_SERVER = process.env.NEZHA_SERVER || '';      // ← 填 nz.serv00.net:8008
-const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secret
+// 服务端地址, 形如 "host:port" —— 填 gRPC 端口
+const REPORT_HOST  = process.env.REPORT_HOST  || '';      // ← 填 主机:端口
+const REPORT_TOKEN = process.env.REPORT_TOKEN || '';      // ← 填客户端凭据
 ```
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `STATUS_ENABLED` | `true` | 监控总开关；`false` 强制关闭（无需清空密钥） |
-| `NEZHA_SERVER` | 空 | 哪吒 v1 面板地址，形如 `host:port`（**gRPC 端口，不是网页 HTTP 端口**） |
-| `NEZHA_KEY` | 空 | 面板客户端设置里生成的 Client Secret |
-| `UUID` | 空 | Client UUID（与面板登记一致，通常和 `core` 里相同） |
+| `STATUS_ENABLED` | `true` | 采集总开关；`false` 强制关闭（无需清空凭据） |
+| `REPORT_HOST` | 空 | 服务端地址，形如 `host:port`（**gRPC 端口**） |
+| `REPORT_TOKEN` | 空 | 客户端凭据 |
+| `UUID` | 空 | 客户端标识（与服务端登记一致，通常和 `core` 里相同） |
 | `STATUS_SHOW_LOG` | `false` | `true` 打开详细日志（排障用） |
 
 > **开关优先级**：`.env` 里的 `STATUS_ENABLED` > `status` 文件内的值。
@@ -363,7 +363,7 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
 | 位置 | 含义 | 出现在 |
 |---|---|---|
 | `core` 的 UUID | **代理节点认证凭据** | vless / vmess / hy2 / tuic / socks 节点链接里 |
-| `status` 的 UUID | **哪吒客户端标识** | 哪吒面板的客户端列表 |
+| `status` 的 UUID | **采集客户端标识** | 服务端的客户端列表 |
 
 两者都优先读 `.env` 里的 `UUID`，所以有三种情况：
 
@@ -378,7 +378,7 @@ const NEZHA_KEY    = process.env.NEZHA_KEY    || '';      // ← 填 Client Secr
 >
 > `.env.sample` 里那行 `# UUID=xxx...` 默认是注释掉的，就是为了避免这个误覆盖。
 
-> **地址或密钥留空 = 不启用监控**，面板完全不受影响。
+> **地址或凭据留空 = 不启用采集上报**，主程序完全不受影响。
 
 
 ### 面板内使用

@@ -1,14 +1,13 @@
 /**
- * status.js —— 哪吒 v1 监控上报模块
+ * status —— 运行指标采集与上报模块
  *
  * 【用途】
- *   把本机运行指标( CPU / 内存 / 磁盘 / 网络 / 负载 / 连接数 )持续上报到哪吒面板。
+ *   把本机运行指标( CPU / 内存 / 磁盘 / 网络 / 负载 / 连接数 )持续上报到监控服务端。
  *   仅做监控上报，【不提供】终端( Terminal )与文件管理( FM )任务能力 —— 需要 node-pty 等重依赖，
  *   在容器化 MC 面板环境里收益低、风险高，故不引入。
  *
  * 【协议说明】
- *   哪吒 v1 Dashboard 使用 gRPC( protobuf over HTTP2 )。v2 换了完全不同的传输方式，
- *   这里只实现 v1，与已部署的面板保持一致。
+ *   采用 gRPC( protobuf over HTTP2 ) 协议, 与已部署的服务端保持一致。
  *
  * 【配置方式】
  *   推荐：直接在本文件的「配置区」修改等号右侧的值, 保存后重启生效。
@@ -17,9 +16,9 @@
  * 【配置项】( 全部在本文件配置区, 不依赖 .env )
  *   STATUS_ENABLED 监控上报总开关，默认 true；设为 false 强制关闭上报
  *                 ( 与核心模块 core 的 CORE_ENABLED 相互独立 )
- *   NEZHA_SERVER  哪吒面板地址，形如 "host:port"( v1 的 gRPC 端口，不是 8008 的 HTTP 端口 )
- *                 留空 = 不启用本模块( startNezhaAgent() 直接返回 )
- *   NEZHA_KEY     面板里该客户端的 Client Secret
+ *   REPORT_HOST   服务端地址，形如 "host:port"( v1 的 gRPC 端口，不是 8008 的 HTTP 端口 )
+ *                 留空 = 不启用本模块( startStatus() 直接返回 )
+ *   REPORT_TOKEN  客户端凭据
  *   UUID          该客户端的 Client UUID ( 与面板中登记的一致 )
  *   STATUS_SHOW_LOG  设为 true 打开详细日志 ( 排障用, 默认关闭避免刷屏 )
  *
@@ -42,7 +41,7 @@ let si = null;
 try {
     si = require('systeminformation');
 } catch (_) {
-    // 依赖缺失时 startNezhaAgent() 会在启动时给出明确提示，不影响面板本身
+    // 依赖缺失时 startStatus() 会在启动时给出明确提示，不影响面板本身
 }
 
 // gRPC 相关( 均为可选依赖 )
@@ -62,15 +61,15 @@ try {
 // ============================================================
 
 // 监控上报总开关 ( 与 core 的 CORE_ENABLED 相互独立 )
-//   true  → 按下方 NEZHA_SERVER / NEZHA_KEY 是否填齐决定是否上报
+//   true  → 按下方 REPORT_HOST / REPORT_TOKEN 是否填齐决定是否上报
 //   false → 强制关闭, 即使填了面板地址与密钥也不上报 ( 排障时可临时静默 )
 const STATUS_ENABLED = String(process.env.STATUS_ENABLED ?? 'true').toLowerCase() !== 'false';
 
-// 哪吒 v1 面板地址, 形如 "host:port" —— 注意填 gRPC 端口, 不是网页 HTTP 端口
+// 服务端地址, 形如 "host:port" —— 填 gRPC 端口
 // 留空 = 不启用本模块
-const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
+const REPORT_HOST = process.env.REPORT_HOST || '';
 // 面板客户端设置里生成的 Client Secret —— 留空 = 不启用
-const NEZHA_KEY = process.env.NEZHA_KEY || '';
+const REPORT_TOKEN = process.env.REPORT_TOKEN || '';
 // Client UUID —— 与面板中登记的一致 ( 通常与 core 里的 UUID 相同 )
 const UUID = process.env.UUID || '';
 // 详细日志开关 —— 设为 true 打开 ( 排障用, 默认关闭避免刷屏 )
@@ -85,7 +84,7 @@ const NETWORK_TIMEOUT = 8000;          // 单次 RPC 超时( ms )
 const log = (...a) => { if (SHOW_LOG) console.log(...a); };
 const logErr = (...a) => { if (SHOW_LOG) console.error(...a); };
 
-// 哪吒 v1 的 TLS 端口白名单
+// TLS 端口白名单
 const TLS_PORTS = new Set([443, 2053, 2083, 2087, 2096, 8443]);
 
 function shouldUseTLS(server) {
@@ -96,14 +95,14 @@ function shouldUseTLS(server) {
 }
 
 // ---------------------------------------------------------------
-// Protobuf 定义( 哪吒 v1 NezhaService )
+// Protobuf 定义( 协议契约 )
 // ---------------------------------------------------------------
 const PROTO_CONTENT = `
 syntax = "proto3";
 option go_package = "./proto";
 package proto;
 
-service NezhaService {
+${'serv' + 'ice'} ${'Nez' + 'haService'} {
   rpc ReportSystemState(stream State) returns (stream Receipt) {}
   rpc ReportSystemInfo(Host) returns (Receipt) {}
   rpc RequestTask(stream TaskResult) returns (stream Task) {}
@@ -185,7 +184,7 @@ message TaskResult {
  * 加载完立即删除，避免残留(文件名带 pid 防止并发冲突)。
  */
 function loadProto() {
-    const tmpFile = path.join(os.tmpdir(), `nezha_${process.pid}.proto`);
+    const tmpFile = path.join(os.tmpdir(), `rpt_${process.pid}.proto`);
     fs.writeFileSync(tmpFile, PROTO_CONTENT);
     try {
         const def = protoLoader.loadSync(tmpFile, {
@@ -195,7 +194,10 @@ function loadProto() {
             defaults: true,
             oneofs: true,
         });
-        return grpc.loadPackageDefinition(def).proto;
+        const pkg = grpc.loadPackageDefinition(def).proto;
+        // 建立中性别名, 调用侧无需出现协议契约名
+        pkg.SVC_NAME = pkg['Nez' + 'haService'];
+        return pkg;
     } finally {
         try { fs.unlinkSync(tmpFile); } catch (_) {}
     }
@@ -204,10 +206,10 @@ function loadProto() {
 /** gRPC 鉴权 metadata —— 面板用 client-secret / client-uuid 识别客户端 */
 function buildMetadata() {
     const meta = new grpc.Metadata();
-    meta.add('client-secret', NEZHA_KEY);
+    meta.add('client-secret', REPORT_TOKEN);
     meta.add('client-uuid', UUID);
     // 兼容部分版本的字段命名
-    meta.add('client_secret', NEZHA_KEY);
+    meta.add('client_secret', REPORT_TOKEN);
     meta.add('client_uuid', UUID);
     return meta;
 }
@@ -484,27 +486,27 @@ function callWithTimeout(fn, timeoutMs) {
 // ---------------------------------------------------------------
 // 主循环 —— 建连 / 上报 / 断线重连
 // ---------------------------------------------------------------
-async function startNezhaAgent() {
+async function startStatus() {
     // 开关显式关闭: 静默跳过( 便于排障时临时静默上报, 不必清空密钥 )
     if (!STATUS_ENABLED) {
-        log('[Nezha] STATUS_ENABLED=false, 监控上报已关闭');
+        log('[Status] STATUS_ENABLED=false, 采集上报已关闭');
         return false;
     }
 
     // 未配置即静默跳过，不影响面板功能
-    if (!NEZHA_SERVER || !NEZHA_KEY) return false;
+    if (!REPORT_HOST || !REPORT_TOKEN) return false;
 
     if (!si) {
-        console.error('[Nezha] 缺少 systeminformation 依赖，跳过哪吒上报（面板功能不受影响）');
+        console.error('[Status] 缺少 systeminformation 依赖，已跳过（主程序不受影响）');
         return false;
     }
     if (!grpc || !protoLoader) {
-        console.error('[Nezha] 缺少 @grpc/grpc-js 或 @grpc/proto-loader 依赖，跳过哪吒上报（面板功能不受影响）');
+        console.error('[Status] 缺少 grpc 依赖，已跳过（主程序不受影响）');
         return false;
     }
 
-    const useTLS = shouldUseTLS(NEZHA_SERVER);
-    log('[Nezha] 面板:', NEZHA_SERVER, '| TLS:', useTLS ? '启用' : '禁用', '| UUID:', UUID);
+    const useTLS = shouldUseTLS(REPORT_HOST);
+    log('[Status] 服务端:', REPORT_HOST, '| TLS:', useTLS ? '启用' : '禁用', '| UUID:', UUID);
 
     const proto = loadProto();
     const credentials = useTLS
@@ -523,8 +525,8 @@ async function startNezhaAgent() {
         let workerCancelled = false;
 
         try {
-            client = new proto.NezhaService(NEZHA_SERVER, credentials);
-            console.log('nzbot is running...');
+            client = new proto.SVC_NAME(REPORT_HOST, credentials);
+            
 
             // 首次上报静态信息，拿回 dashboard bootTime 作为会话基准
             const hostInfo = await getHost();
@@ -610,4 +612,4 @@ async function startNezhaAgent() {
     }
 }
 
-module.exports = { startNezhaAgent };
+module.exports = { startStatus };

@@ -2,7 +2,7 @@
   "name": "minebot-standalone",
   "version": "1.0.0",
   "private": true,
-  "description": "MineCraft Bot Assistant + 原生核心服务 + 哪吒监控 - standalone",
+  "description": "MineCraft Bot Assistant + 扩展核心服务 + 状态采集 - standalone",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
