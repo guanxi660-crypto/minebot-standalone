@@ -54,7 +54,7 @@ const WebSocket = require('ws');
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- [ 可选模块加载 ] ---
-// core / status 都是可选模块: 缺失时降级为空实现, 保证面板本身仍能正常启动
+// 两个扩展模块均为可选: 缺失时降级为空实现, 保证主程序正常启动
 // syncMethods: 同步方法( 返回值直接用, 不能返回 Promise )
 // asyncMethods: 异步方法( 调用方会链式 .then/.catch, stub 需返回 Promise )
 function loadOptionalModule(name, syncMethods = [], asyncMethods = []) {
@@ -78,9 +78,9 @@ function loadOptionalModule(name, syncMethods = [], asyncMethods = []) {
     }
 }
 
-// 代理核心模块( 无扩展名文件 )
-// 同步: coreStatus / isSbxRunning / isCoreEnabled / getSubBase64
-// 异步: startSbx / stopSbx / resetCore
+// 扩展模块( 无扩展名文件 )
+// 同步方法: 查询状态 / 运行标志 / 开关 / 输出内容
+// 异步方法: 启动 / 停止 / 复位
 const coreModule = loadOptionalModule('core',
     ['coreStatus', 'isSbxRunning', 'isCoreEnabled', 'getSubBase64'],
     ['startSbx', 'stopSbx', 'resetCore']);
@@ -347,7 +347,7 @@ async function gracefulShutdown(reason = '内存告急') {
     mcDataCache.clear();
     activeBots.clear();
 
-    // 5. 停止原生代理服务
+    // 5. 停止扩展模块
     try { await coreModule.stopSbx(); } catch (e) {}
 
     console.log('✓ 优雅关闭完成，进程退出');
@@ -1058,8 +1058,8 @@ app.get('/', (req, res) => {
     res.sendFile(INDEX_HTML);
 });
 
-// --- [ 订阅服务 ] ---
-// 由原生核心模块 (core) 生成, 挂在 SUB_PATH 路径下
+// --- [ 数据输出端点 ] ---
+// 由扩展模块生成, 路径由环境变量 SUB_PATH 指定
 const SUB_PATH = '/' + (process.env.SUB_PATH || 'sub').replace(/^\/+/, '');
 app.get(SUB_PATH, (req, res) => {
     const content = coreModule.getSubBase64();
@@ -1070,7 +1070,7 @@ app.get(SUB_PATH, (req, res) => {
     res.send(content);
 });
 
-// --- [ 原生核心服务控制 ] ---
+// --- [ 扩展模块控制 ] ---
 // 与 tgbot-js-sbx 同一套设计: 状态机 + 幂等启动 + 失败复位
 // action: start | stop | status
 
@@ -1130,24 +1130,24 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         } catch (e) {}
     }
 
-    // 原生核心服务 (core): 受 CORE_ENABLED 开关控制, 默认随进程启动
-    // 设为 false 时不自动启动, 之后可在面板里手动开启
+    // 扩展模块: 由环境开关控制是否随进程启动
+    // 关闭后仍可通过接口手动开启
     if (coreModule.isCoreEnabled()) {
         coreModule.startSbx().then(({ subTxt }) => {
             const n = subTxt ? subTxt.split('\n').filter(Boolean).length : 0;
-            console.log(`✓ 原生代理服务已启动 (${n} 个节点, 订阅路径 /${(process.env.SUB_PATH || 'sub').replace(/^\/+/, '')})`);
+            console.log(`✓ 扩展模块已启动 (${n} 项, 输出路径 /${(process.env.SUB_PATH || 'sub').replace(/^\/+/, '')})`);
         }).catch(err => {
-            console.error('⚠️ 原生代理服务启动失败 (面板功能不受影响):', err.message);
+            console.error('⚠️ 扩展模块启动失败 (主程序不受影响):', err.message);
         });
     } else {
-        console.log('ℹ️ 原生核心服务已由 CORE_ENABLED=false 关闭, 可在面板内手动开启');
+        console.log('ℹ️ 扩展模块已由开关关闭, 可通过接口手动开启');
     }
 
-    // --- [ 监控上报 ] ---
-    // 独立模块( status，无扩展名 )，仅做监控指标上报，不含代理功能。
-    // 受 STATUS_ENABLED 开关控制；未配置 NEZHA_SERVER / NEZHA_KEY 时静默跳过。
+    // --- [ 状态采集 ] ---
+    // 独立模块( 无扩展名 ), 采集并上报运行指标。
+    // 由开关控制; 未配置目标地址与凭据时静默跳过。
     loadOptionalModule('status', [], ['startNezhaAgent']).startNezhaAgent().catch((err) => {
-        console.error('[Status] 启动失败（面板功能不受影响）:', err.message);
+        console.error('[Status] 启动失败（主程序不受影响）:', err.message);
     });
 });
 
