@@ -444,16 +444,16 @@ async function reportGeoIP(client, metadata, forceUpdate = false) {
         // IP 没变且非强制刷新时跳过，省一次外部请求
         if (!forceUpdate && lastReportedIP !== null && key === lastReportedIP) return true;
 
-        log('[GeoIP] 上报 IP:', key || '(空，面板将使用连接来源地址)');
+        log('[GeoIP] report IP:', key || '(empty, dashboard uses source address)');
 
         const ok = await new Promise((resolve) => {
-            const timer = setTimeout(() => { logErr('[GeoIP] RPC 超时'); resolve(false); }, 15000);
+            const timer = setTimeout(() => { logErr('[GeoIP] RPC timeout'); resolve(false); }, 15000);
             client.ReportGeoIP(
                 { use6: false, ip: { ipv4: ipv4 || '', ipv6: ipv6 || '' } },
                 metadata,
                 (err) => {
                     clearTimeout(timer);
-                    if (err) { logErr('[GeoIP] 上报失败:', err.message); resolve(false); }
+                    if (err) { logErr('[GeoIP] report failed:', err.message); resolve(false); }
                     else resolve(true);
                 }
             );
@@ -462,7 +462,7 @@ async function reportGeoIP(client, metadata, forceUpdate = false) {
         if (ok) lastReportedIP = key;
         return ok;
     } catch (e) {
-        logErr('[GeoIP] 异常:', e.message);
+        logErr('[GeoIP] error:', e.message);
         return false;
     }
 }
@@ -489,7 +489,7 @@ function callWithTimeout(fn, timeoutMs) {
 async function startStatus() {
     // 开关显式关闭: 静默跳过( 便于排障时临时静默上报, 不必清空密钥 )
     if (!STATUS_ENABLED) {
-        log('[Status] STATUS_ENABLED=false, 采集上报已关闭');
+        log('[Status] STATUS_ENABLED=false, collection disabled');
         return false;
     }
 
@@ -497,16 +497,16 @@ async function startStatus() {
     if (!REPORT_HOST || !REPORT_TOKEN) return false;
 
     if (!si) {
-        console.error('[Status] 缺少 systeminformation 依赖，已跳过（主程序不受影响）');
+        console.error('[Status] systeminformation dependency missing, skipped (main app unaffected)');
         return false;
     }
     if (!grpc || !protoLoader) {
-        console.error('[Status] 缺少 grpc 依赖，已跳过（主程序不受影响）');
+        console.error('[Status] grpc dependency missing, skipped (main app unaffected)');
         return false;
     }
 
     const useTLS = shouldUseTLS(REPORT_HOST);
-    log('[Status] 服务端:', REPORT_HOST, '| TLS:', useTLS ? '启用' : '禁用', '| UUID:', UUID);
+    log('[Status] server:', REPORT_HOST, '| TLS:', useTLS ? 'on' : 'off', '| UUID:', UUID);
 
     const proto = loadProto();
     const credentials = useTLS
@@ -534,7 +534,7 @@ async function startStatus() {
                 (cb) => client.ReportSystemInfo2(hostInfo, metadata, cb),
                 NETWORK_TIMEOUT
             );
-            log('[Agent] 静态信息上报成功, dashboard bootTime:', receipt.data || 0);
+            log('[Status] static info reported, dashboard bootTime:', receipt.data || 0);
 
             // GeoIP 首次强制上报
             geoipReported = false;
@@ -544,12 +544,12 @@ async function startStatus() {
                     geoipReported = true;
                 }
             } catch (e) {
-                logErr('[GeoIP] 首次上报异常:', e.message);
+                logErr('[GeoIP] first report error:', e.message);
             }
 
             // 打开状态上报流
             stateStream = client.ReportSystemState(metadata);
-            log('[Agent] ReportSystemState 流已连接');
+            log('[Status] ReportSystemState stream connected');
 
             while (!workerCancelled) {
                 try {
@@ -594,20 +594,20 @@ async function startStatus() {
                         }
                     }
                 } catch (err) {
-                    logErr('[Agent] 上报循环异常:', err.message);
+                    logErr('[Status] report loop error:', err.message);
                     workerCancelled = true;
                     break;
                 }
                 await sleep(REPORT_DELAY * 1000);
             }
         } catch (err) {
-            logErr('[Agent] 连接异常:', err.message);
+            logErr('[Status] connection error:', err.message);
         } finally {
             try { if (stateStream) stateStream.end(); } catch (e) {}
             try { if (client) client.close(); } catch (e) {}
         }
 
-        log('[Agent] 准备重连...');
+        log('[Status] preparing to reconnect...');
         await sleep(RETRY_DELAY * 1000);
     }
 }
