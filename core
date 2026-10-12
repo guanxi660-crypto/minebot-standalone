@@ -40,7 +40,7 @@ const { execSync } = require('child_process');
 // ============================================================
 
 // 节点 UUID —— 建议改成自己的随机 UUID
-const UUID           = process.env.UUID           || '0a6568ff-ea3c-4271-9020-450560e10d63';
+const UUID           = process.env.UUID           || 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 // 节点名称前缀 —— 留空则用 IP-ISP 自动命名
 const NAME           = process.env.NAME           || '';
 // 订阅路径 —— 订阅地址为 http://<IP>:<面板端口>/<SUB_PATH>

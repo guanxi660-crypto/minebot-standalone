@@ -265,7 +265,7 @@ cp .env.sample .env
 
 ```js
 // 节点 UUID —— 建议改成自己的随机 UUID
-const UUID = process.env.UUID || '0a6568ff-ea3c-4271-9020-450560e10d63';
+const UUID = process.env.UUID || 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 
 // --- 入站端口 ( 留空 = 不启用该协议 ) ---
 const HY2_PORT      = process.env.HY2_PORT      || '';      // ← 填 8443 启用 Hysteria2
