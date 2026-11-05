@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "test": "node --test",
     "pm2": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop minebot",
     "pm2:restart": "pm2 restart minebot",

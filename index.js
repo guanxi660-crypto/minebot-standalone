@@ -1036,6 +1036,8 @@ app.delete("/api/bots/:id", apiErrorHandler(async (req, res) => {
 
 // --- [ 前端 UI ] ---
 // 页面从 public/index.html 读取 (部署时必须保持 public/ 目录结构与 index.js 同级)
+// 控制台的樣式、視圖模型與互動腳本由 public/ 提供。
+app.use(express.static(path.join(__dirname, 'public')));
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
 if (!fsSync.existsSync(INDEX_HTML)) {
     console.error('============================================================');
