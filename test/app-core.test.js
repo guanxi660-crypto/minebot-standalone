@@ -72,11 +72,11 @@ test('fmtMem: percent 字串轉數字 + 條色階', () => {
     assert.strictEqual(A.fmtMem({ percent: '95' }).barCls, 'bg-red-500');
 });
 
-test('index.html: 暗色主題（color-scheme dark + 暗色變數組，無亮色殘留）', () => {
+test('console.css: 保留預設暗色，亮色使用獨立主題變數', () => {
     const h = require('fs').readFileSync(require('path').join(__dirname, '../public/console.css'), 'utf8');
     assert.ok(h.includes('color-scheme:dark'), '應宣告 color-scheme:dark');
     assert.ok(h.includes('--bg:#111113'), '暗底變數');
     assert.ok(h.includes('--ink:#e4e4e7'), '亮字變數');
-    assert.ok(!h.includes('#fafafa'), '不得殘留亮色底 #fafafa');
-    assert.ok(!h.includes('#fef2f2'), '不得殘留亮色 danger hover');
+    assert.match(h, /:root\[data-theme="light"\]\s*\{[^}]*color-scheme:light/s, '亮色需明確選取才能啟用');
+    assert.match(h, /:root\[data-theme="light"\]\s*\{[^}]*--bg:#f5f6f7/s, '亮色背景獨立');
 });

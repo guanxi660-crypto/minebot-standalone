@@ -1,4 +1,4 @@
-/* 功能索引：data/computed 畫面與網址模型；認證與導覽生命週期；poll 狀態同步；機器人操作；翼龍與檔案操作。 */
+/* 功能索引：畫面、偏好與網址模型；認證與導覽生命週期；poll 狀態同步；機器人操作；翼龍與檔案操作。 */
 const { createApp } = Vue;
 createApp({
   data() {
@@ -7,7 +7,7 @@ createApp({
       loginErr: '', afErr: '', bots: [], sys: null, core: { status: 'unknown', detail: '' },
       loading: true, loaded: false, polling: false, pollError: '', systemError: '', coreError: '',
       busy: { login: false, add: false, core: false }, toast: { msg: '', err: false },
-      timers: [], toastTimer: null, session: 0, route: window.location.hash,
+      timers: [], toastTimer: null, session: 0, route: window.location.hash, preferences: UI_PREFS.read(localStorage),
       modes: [{ id: 'ai', name: 'AI 視角', detail: '注視附近玩家' }, { id: 'walk', name: '自主行走', detail: '隨機巡邏' }, { id: 'chat', name: '自動聊天', detail: '定時發送訊息' }, { id: 'mine', name: '自動挖礦', detail: '挖掘鄰近方塊' }]
     };
   },
@@ -20,17 +20,22 @@ createApp({
     },
     detailViews() { return this.selectedBotId ? this.botViews.filter(b => b.raw.id === this.selectedBotId) : []; },
     onlineCount() { return this.botViews.filter(b => b.view.online).length; },
-    coreLabel() { return { running: '運行中', starting: '啟動中', stopped: '已停止', unknown: '尚未取得' }[this.core.status] || this.core.status; }
+    coreLabel() { return this.t({ running: '運行中', starting: '啟動中', stopped: '已停止', unknown: '尚未取得' }[this.core.status] || this.core.status); }
   },
   methods: {
+    t(text, params) { return UI_PREFS.translate(this.preferences.locale, text, params); },
+    setPreference(key, value) {
+      this.preferences = UI_PREFS.save(localStorage, this.preferences, key, value);
+      UI_PREFS.apply(this.preferences, document);
+    },
     syncRoute() {
       const previous = this.selectedBotId;
       this.route = window.location.hash;
       if (previous !== this.selectedBotId) this.$nextTick(() => this.$refs?.workspace?.focus());
     },
-    statusLabel(value) { return { '在线': '在線', '离线': '離線', '连接中': '連線中', '重连中': '重新連線中' }[value] || value; },
-    say(msg, err) {
-      this.toast = { msg, err: !!err };
+    statusLabel(value) { return this.t({ '在线': '在線', '离线': '離線', '连接中': '連線中', '重连中': '重新連線中' }[value] || value); },
+    say(msg, err, params) {
+      this.toast = { msg, err: !!err, params };
       clearTimeout(this.toastTimer);
       this.toastTimer = setTimeout(() => this.toast.msg = '', 5000);
     },
@@ -120,7 +125,7 @@ createApp({
       } catch (e) { this.afErr = e.message; } finally { this.busy.add = false; }
     },
     async delBot(b) {
-      if (!confirm('移除機器人 ' + b.username + '？')) return;
+      if (!confirm(this.t('移除機器人 {name}？', { name: b.username }))) return;
       try {
         await this.api('/api/bots/' + b.id, { method: 'DELETE' });
         if (this.selectedBotId === b.id) window.location.hash = '#/';
@@ -164,8 +169,8 @@ createApp({
       catch (e) { this.say(e.message, true); }
     },
     async power(b, signal) {
-      if (signal === 'kill' && !confirm('強制終止伺服器？未儲存的資料可能遺失。')) return;
-      try { await this.api('/api/bots/' + b.id + '/power', { method: 'POST', body: JSON.stringify({ signal }) }); this.say('電源指令已送出：' + signal); }
+      if (signal === 'kill' && !confirm(this.t('強制終止伺服器？未儲存的資料可能遺失。'))) return;
+      try { await this.api('/api/bots/' + b.id + '/power', { method: 'POST', body: JSON.stringify({ signal }) }); this.say('電源指令已送出：{signal}', false, { signal }); }
       catch (e) { this.say(e.message, true); }
     },
     filePath(b, f) { return (b._fdir || b.settings.pterodactyl?.defaultDir || '').replace(/\/$/, '') + '/' + f.attributes.name; },
@@ -189,7 +194,7 @@ createApp({
       catch (e) { this.say(e.message, true); }
     },
     async delFile(b, f) {
-      if (!confirm('刪除 ' + f.attributes.name + '？')) return;
+      if (!confirm(this.t('刪除 {name}？', { name: f.attributes.name }))) return;
       try { await this.api('/api/bots/' + b.id + '/files/delete', { method: 'POST', body: JSON.stringify({ file: this.filePath(b, f) }) }); this.loadFiles(b, b._fdir || ''); }
       catch (e) { this.say(e.message, true); }
     },

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 功能索引：login 登入；bot-summary 總覽；bot-card 單機日誌與行為；settings 進階設定；workspace-settings 新增與系統。 -->
+<!-- 功能索引：偏好與登入；bot-summary 總覽；bot-card 單機日誌與行為；settings 進階設定；workspace-settings 新增與系統。 -->
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#111113">
   <title>MineBot 控制台</title>
   <link rel="icon" href="data:,">
+  <script src="/preferences.js"></script>
   <link rel="stylesheet" href="/console.css">
   <script defer src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script defer src="/app-core.js"></script>
@@ -14,107 +15,109 @@
 </head>
 <body>
 <div id="app" v-cloak>
+  <header :class="token ? 'topbar' : 'login-brand'">
+    <div :class="token ? 'topbar-inner' : 'login-brand-inner'">
+      <a class="brand" href="#/">MineBot<span class="brand-period">.</span></a>
+      <nav :aria-label="t('主導覽')" v-if="token"><a href="#/" :aria-current="!selectedBotId ? 'page' : undefined">{{ t('控制台') }}</a></nav>
+      <span class="topbar-context">{{ t('Minecraft 機器人管理') }}</span>
+      <div class="preferences">
+        <label for="ui-locale">{{ t('語言') }}<select id="ui-locale" data-preference="locale" class="input" :value="preferences.locale" @change="setPreference('locale',$event.target.value)"><option value="zh-Hant" lang="zh-Hant">繁體中文</option><option value="zh-Hans" lang="zh-Hans">简体中文</option></select></label>
+        <label for="ui-theme">{{ t('外觀') }}<select id="ui-theme" data-preference="theme" class="input" :value="preferences.theme" @change="setPreference('theme',$event.target.value)"><option value="dark">{{ t('暗色') }}</option><option value="light">{{ t('亮色') }}</option></select></label>
+      </div>
+      <button class="btn btn-quiet logout-button" @click="logout" v-if="token">{{ t('登出') }}</button>
+    </div>
+  </header>
   <template v-if="!token">
-    <header class="login-brand"><span class="brand">MineBot<span class="brand-period">.</span></span><span class="muted">Minecraft 控制台</span></header>
     <main id="login">
-      <div class="login-intro"><p class="login-title">讓每一次連線，<br>都在掌握之中。</p><p>從機器人的即時日誌，到伺服器的日常管理。<br>在同一個工作區，照顧你的 Minecraft 世界。</p><div class="login-caption">連線狀態 <span>／</span> 行為設定 <span>／</span> 伺服器管理</div></div>
+      <div class="login-intro"><p class="login-title">{{ t('讓每一次連線，') }}<br>{{ t('都在掌握之中。') }}</p><p>{{ t('從機器人的即時日誌，到伺服器的日常管理。') }}<br>{{ t('在同一個工作區，照顧你的 Minecraft 世界。') }}</p><div class="login-caption">{{ t('連線狀態') }} <span>／</span> {{ t('行為設定') }} <span>／</span> {{ t('伺服器管理') }}</div></div>
       <form class="login-card" @submit.prevent="login">
-        <h1>登入工作區</h1><p class="muted">使用管理員帳號繼續。</p>
-        <label for="login-user">使用者名稱</label><input id="login-user" class="input" v-model="lf.username" autocomplete="username" required>
-        <label for="login-password">密碼</label><input id="login-password" class="input" type="password" v-model="lf.password" autocomplete="current-password" required>
-        <p class="error-text" role="alert" v-if="loginErr">{{ loginErr }}</p>
-        <button class="btn btn-primary full" :disabled="busy.login">{{ busy.login ? '登入中…' : '登入控制台' }}</button>
+        <h1>{{ t('登入工作區') }}</h1><p class="muted">{{ t('使用管理員帳號繼續。') }}</p>
+        <label for="login-user">{{ t('使用者名稱') }}</label><input id="login-user" class="input" v-model="lf.username" autocomplete="username" required>
+        <label for="login-password">{{ t('密碼') }}</label><input id="login-password" class="input" type="password" v-model="lf.password" autocomplete="current-password" required>
+        <p class="error-text" role="alert" v-if="loginErr">{{ t(loginErr) }}</p>
+        <button class="btn btn-primary full" :disabled="busy.login">{{ t(busy.login ? '登入中…' : '登入控制台') }}</button>
       </form>
     </main>
-    <footer class="login-footer">MineBot <span>Minecraft 機器人管理</span></footer>
+    <footer class="login-footer">MineBot <span>{{ t('Minecraft 機器人管理') }}</span></footer>
   </template>
 
   <template v-else>
-    <a class="skip-link" href="#workspace" @click.prevent="$refs.workspace.focus()">跳至工作區</a>
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="#/">MineBot<span class="brand-period">.</span></a>
-        <nav aria-label="主導覽"><a href="#/" :aria-current="!selectedBotId ? 'page' : undefined">控制台</a></nav>
-        <span class="topbar-context">Minecraft 機器人管理</span>
-        <button class="btn btn-quiet" @click="logout">登出</button>
-      </div>
-    </header>
-
+    <a class="skip-link" href="#workspace" @click.prevent="$refs.workspace.focus()">{{ t('跳至工作區') }}</a>
     <main class="main" id="workspace" ref="workspace" tabindex="-1">
-      <a class="back-link" href="#/" v-if="selectedBotId">返回機器人總覽</a>
+      <a class="back-link" href="#/" v-if="selectedBotId">{{ t('返回機器人總覽') }}</a>
       <div class="page-heading">
-        <div><h1>{{ selectedBotId ? '機器人詳情' : '機器人工作區' }}</h1><p>{{ selectedBotId ? '查看這個機器人的日誌、行為與伺服器設定。' : '查看所有連線，選擇機器人進入管理。' }}</p></div>
-        <div class="sync-status" role="status"><span class="dot" :class="pollError ? 'dot-warn' : loaded ? 'dot-on' : 'dot-off'"></span>{{ pollError ? '同步中斷' : loaded ? '每 5 秒自動更新' : '正在取得狀態' }}</div>
+        <div><h1>{{ t(selectedBotId ? '機器人詳情' : '機器人工作區') }}</h1><p>{{ t(selectedBotId ? '查看這個機器人的日誌、行為與伺服器設定。' : '查看所有連線，選擇機器人進入管理。') }}</p></div>
+        <div class="sync-status" role="status"><span class="dot" :class="pollError ? 'dot-warn' : loaded ? 'dot-on' : 'dot-off'"></span>{{ t(pollError ? '同步中斷' : loaded ? '每 5 秒自動更新' : '正在取得狀態') }}</div>
       </div>
-      <a class="btn btn-primary mobile-add" href="#add-bot" v-if="!selectedBotId">新增機器人</a>
+      <a class="btn btn-primary mobile-add" href="#add-bot" v-if="!selectedBotId">{{ t('新增機器人') }}</a>
       <div class="workspace-grid" :class="{ 'detail-layout': selectedBotId }">
         <div class="bot-workspace">
-          <div class="section-heading"><h2>{{ selectedBotId ? '機器人控制' : '機器人' }}</h2><template v-if="loaded && !selectedBotId"><span class="count">{{ bots.length }}</span><span class="online-count">{{ onlineCount }} 個在線</span></template></div>
-          <div class="notice error-notice" role="alert" v-if="pollError"><div><strong>無法同步機器人</strong><p>{{ pollError }}<template v-if="loaded">，目前顯示上次取得的資料。</template></p></div><button class="btn" @click="poll" :disabled="polling">重新整理</button></div>
-          <div class="empty-state" role="status" v-if="loading && !loaded"><span class="empty-symbol" aria-hidden="true">···</span><h3>正在讀取工作區</h3><p>取得機器人的連線狀態與日誌。</p></div>
-          <div class="empty-state" v-else-if="loaded && selectedBotId && !detailViews.length && !pollError"><h3>找不到這個機器人</h3><p>機器人可能已被移除，或連結已失效。</p><a class="btn" href="#/">查看所有機器人</a></div>
-          <div class="empty-state" v-else-if="loaded && !selectedBotId && !bots.length"><span class="empty-symbol" aria-hidden="true">[ ]</span><h3>準備好第一個機器人</h3><p>填入伺服器位址與玩家名稱，<br>連線後就能在這裡查看日誌和設定行為。</p><a class="btn" href="#add-bot">新增機器人</a></div>
+          <div class="section-heading"><h2>{{ t(selectedBotId ? '機器人控制' : '機器人') }}</h2><template v-if="loaded && !selectedBotId"><span class="count">{{ bots.length }}</span><span class="online-count">{{ t('{count} 個在線',{count:onlineCount}) }}</span></template></div>
+          <div class="notice error-notice" role="alert" v-if="pollError"><div><strong>{{ t('無法同步機器人') }}</strong><p>{{ t(pollError) }}<template v-if="loaded">{{ t('，目前顯示上次取得的資料。') }}</template></p></div><button class="btn" @click="poll" :disabled="polling">{{ t('重新整理') }}</button></div>
+          <div class="empty-state" role="status" v-if="loading && !loaded"><span class="empty-symbol" aria-hidden="true">···</span><h3>{{ t('正在讀取工作區') }}</h3><p>{{ t('取得機器人的連線狀態與日誌。') }}</p></div>
+          <div class="empty-state" v-else-if="loaded && selectedBotId && !detailViews.length && !pollError"><h3>{{ t('找不到這個機器人') }}</h3><p>{{ t('機器人可能已被移除，或連結已失效。') }}</p><a class="btn" href="#/">{{ t('查看所有機器人') }}</a></div>
+          <div class="empty-state" v-else-if="loaded && !selectedBotId && !bots.length"><span class="empty-symbol" aria-hidden="true">[ ]</span><h3>{{ t('準備好第一個機器人') }}</h3><p>{{ t('填入伺服器位址與玩家名稱，') }}<br>{{ t('連線後就能在這裡查看日誌和設定行為。') }}</p><a class="btn" href="#add-bot">{{ t('新增機器人') }}</a></div>
 
           <div class="summary-grid" v-if="!selectedBotId && loaded">
             <a class="bot-summary" v-for="{ raw, view } in botViews" :key="raw.id" :href="'#/bots/'+encodeURIComponent(raw.id)" :aria-labelledby="'summary-name-'+encodeURIComponent(raw.id)">
               <div class="summary-title"><h3 :id="'summary-name-'+encodeURIComponent(raw.id)">{{ view.name }}</h3><span class="status-label" :class="view.online ? 'status-online' : 'status-offline'"><span class="dot" :class="view.online ? 'dot-on' : 'dot-off'"></span>{{ statusLabel(view.statusText) }}</span></div>
               <p class="summary-user mono">{{ view.username }}</p>
               <p class="summary-host mono">{{ view.host }}:{{ view.port }}</p>
-              <div class="summary-footer"><span>{{ view.modes }} / 4 行為啟用</span><span class="summary-open">查看詳情</span></div>
+              <div class="summary-footer"><span>{{ t('{count} / 4 行為啟用',{count:view.modes}) }}</span><span class="summary-open">{{ t('查看詳情') }}</span></div>
             </a>
           </div>
 
           <section class="bot-card" v-for="{ raw, view } in detailViews" :key="raw.id" :data-bot-id="raw.id" :aria-labelledby="'bot-'+encodeURIComponent(raw.id)">
             <div class="bot-header">
               <div class="bot-identity"><div class="bot-title-row"><h3 :id="'bot-'+encodeURIComponent(raw.id)">{{ view.name }}</h3><span class="status-label" :class="view.online ? 'status-online' : 'status-offline'"><span class="dot" :class="view.online ? 'dot-on' : 'dot-off'"></span>{{ statusLabel(view.statusText) }}</span></div><p class="bot-host mono">{{ view.username }}<span class="host-divider"> / </span>{{ view.host }}:{{ view.port }}</p></div>
-              <div class="bot-actions"><button class="btn" @click="act(raw,'reconnect')">重新連線</button><button class="btn" @click="act(raw,'restart-now')">立即重啟</button></div>
+              <div class="bot-actions"><button class="btn" @click="act(raw,'reconnect')">{{ t('重新連線') }}</button><button class="btn" @click="act(raw,'restart-now')">{{ t('立即重啟') }}</button></div>
             </div>
             <div class="log-section">
-              <div class="log-heading"><h4>即時日誌</h4><span class="log-meta">{{ view.logs.length ? '最近 '+Math.min(view.logs.length,50)+' 筆' : '等待訊息' }}</span><span class="player-count" v-if="view.online">{{ view.playerCount }} 位玩家在線</span></div>
-              <div class="log-box" tabindex="0" :aria-label="view.name+'的即時日誌'">
+              <div class="log-heading"><h4>{{ t('即時日誌') }}</h4><span class="log-meta">{{ view.logs.length ? t('最近 {count} 筆',{count:Math.min(view.logs.length,50)}) : t('等待訊息') }}</span><span class="player-count" v-if="view.online">{{ t('{count} 位玩家在線',{count:view.playerCount}) }}</span></div>
+              <div class="log-box" tabindex="0" :aria-label="t('{name}的即時日誌',{name:view.name})">
                 <div class="log-line" v-for="(l,i) in view.logs.slice(-50)" :key="i"><time class="log-t">{{ l.time }}</time><span :class="l.cls" v-html="l.html"></span></div>
-                <p class="log-empty" v-if="!view.logs.length">尚無日誌。連線後的訊息會顯示在這裡。</p>
+                <p class="log-empty" v-if="!view.logs.length">{{ t('尚無日誌。連線後的訊息會顯示在這裡。') }}</p>
               </div>
             </div>
-            <div class="behavior-section"><div class="section-label"><h4>行為模式</h4><span>{{ view.modes }} / 4 啟用</span></div>
-              <div class="behavior-grid"><label class="behavior-switch" v-for="m in modes" :key="m.id"><span><span class="behavior-name">{{ m.name }}</span><small>{{ m.detail }}</small></span><input type="checkbox" :checked="raw.settings[m.id]" :disabled="raw._busyMode===m.id" @change="toggle(raw,m.id,$event)"><span class="switch-track" aria-hidden="true"></span></label></div>
+            <div class="behavior-section"><div class="section-label"><h4>{{ t('行為模式') }}</h4><span>{{ t('{count} / 4 啟用',{count:view.modes}) }}</span></div>
+              <div class="behavior-grid"><label class="behavior-switch" v-for="m in modes" :key="m.id"><span><span class="behavior-name">{{ t(m.name) }}</span><small>{{ t(m.detail) }}</small></span><input type="checkbox" :checked="raw.settings[m.id]" :disabled="raw._busyMode===m.id" @change="toggle(raw,m.id,$event)"><span class="switch-track" aria-hidden="true"></span></label></div>
             </div>
             <div class="settings">
-              <details><summary><span>定時重啟</span><span class="summary-value">{{ view.nextRestart || '未排程' }}</span></summary>
-                <form class="detail-body timer-form" @submit.prevent="setTimer(raw)"><label>重啟間隔<input class="input" type="number" min="1" max="10080" step="1" v-model.number="raw._tv" required></label><label>時間單位<select class="input" v-model="raw._tu"><option value="min">分鐘</option><option value="hour">小時</option></select></label><button class="btn">儲存排程</button><button type="button" class="btn btn-quiet" @click="setTimer(raw,0)">停用排程</button></form>
+              <details><summary><span>{{ t('定時重啟') }}</span><span class="summary-value">{{ view.nextRestart || t('未排程') }}</span></summary>
+                <form class="detail-body timer-form" @submit.prevent="setTimer(raw)"><label>{{ t('重啟間隔') }}<input class="input" type="number" min="1" max="10080" step="1" v-model.number="raw._tv" required></label><label>{{ t('時間單位') }}<select class="input" v-model="raw._tu"><option value="min">{{ t('分鐘') }}</option><option value="hour">{{ t('小時') }}</option></select></label><button class="btn">{{ t('儲存排程') }}</button><button type="button" class="btn btn-quiet" @click="setTimer(raw,0)">{{ t('停用排程') }}</button></form>
               </details>
-              <details><summary><span>翼龍面板</span><span class="summary-value">{{ raw.settings.pterodactyl?.url ? '已設定' : '尚未設定' }}</span></summary>
-                <div class="detail-body"><div class="field-grid"><label>面板網址<input class="input mono" v-model="raw._p.url" placeholder="https://panel.example.com"></label><label>API Key<input class="input mono" type="password" v-model="raw._p.key" autocomplete="off"></label><label>伺服器 ID<input class="input mono" v-model="raw._p.id"></label><label>預設目錄<input class="input mono" v-model="raw._p.defaultDir" placeholder="/home/container"></label></div>
-                  <p class="error-text" role="alert" v-if="raw._pErr">{{ raw._pErr }}</p>
-                  <div class="actions"><button class="btn" @click="savePto(raw)">儲存設定</button><button class="btn" @click="testPanel(raw)">測試連線</button></div>
-                  <div class="power-controls"><span class="muted">伺服器電源</span><div class="actions"><button class="btn" @click="power(raw,'start')">開機</button><button class="btn" @click="power(raw,'restart')">重啟電源</button><button class="btn" @click="power(raw,'stop')">關機</button><button class="btn btn-danger" @click="power(raw,'kill')">強制終止</button></div></div>
-                  <div class="file-section"><div class="section-label"><h4>檔案管理</h4><button class="btn" @click="loadFiles(raw,raw._fdir || '')" :disabled="raw._filesLoading">{{ raw._filesLoading ? '讀取中…' : raw._files ? '重新整理檔案' : '載入檔案' }}</button></div>
-                    <p class="error-text" role="alert" v-if="raw._filesError">{{ raw._filesError }}</p>
-                    <template v-if="raw._files"><div class="file-toolbar"><span class="mono file-path">{{ raw._fdir || '預設目錄' }}</span><button class="btn" @click="loadFiles(raw,'')">回預設目錄</button><label class="btn upload-label">上傳檔案<input type="file" :disabled="raw._uploading" @change="upload(raw,$event)"></label></div>
-                      <div class="file-row" v-for="f in raw._files" :key="f.attributes.name"><button class="file-name directory" v-if="!f.attributes.is_file" @click="loadFiles(raw,filePath(raw,f))">{{ f.attributes.name }} /</button><span class="file-name" v-else>{{ f.attributes.name }}</span><span class="file-size mono">{{ f.attributes.is_file ? fmtSize(f.attributes.size) : '目錄' }}</span><button class="btn" v-if="f.attributes.is_file" @click="download(raw,f)">下載</button><button class="btn btn-danger" @click="delFile(raw,f)">刪除</button></div><p class="muted file-empty" v-if="!raw._files.length">這個目錄還沒有檔案。</p>
+              <details><summary><span>{{ t('翼龍面板') }}</span><span class="summary-value">{{ t(raw.settings.pterodactyl?.url ? '已設定' : '尚未設定') }}</span></summary>
+                <div class="detail-body"><div class="field-grid"><label>{{ t('面板網址') }}<input class="input mono" v-model="raw._p.url" placeholder="https://panel.example.com"></label><label>API Key<input class="input mono" type="password" v-model="raw._p.key" autocomplete="off"></label><label>{{ t('伺服器 ID') }}<input class="input mono" v-model="raw._p.id"></label><label>{{ t('預設目錄') }}<input class="input mono" v-model="raw._p.defaultDir" placeholder="/home/container"></label></div>
+                  <p class="error-text" role="alert" v-if="raw._pErr">{{ t(raw._pErr) }}</p>
+                  <div class="actions"><button class="btn" @click="savePto(raw)">{{ t('儲存設定') }}</button><button class="btn" @click="testPanel(raw)">{{ t('測試連線') }}</button></div>
+                  <div class="power-controls"><span class="muted">{{ t('伺服器電源') }}</span><div class="actions"><button class="btn" @click="power(raw,'start')">{{ t('開機') }}</button><button class="btn" @click="power(raw,'restart')">{{ t('重啟電源') }}</button><button class="btn" @click="power(raw,'stop')">{{ t('關機') }}</button><button class="btn btn-danger" @click="power(raw,'kill')">{{ t('強制終止') }}</button></div></div>
+                  <div class="file-section"><div class="section-label"><h4>{{ t('檔案管理') }}</h4><button class="btn" @click="loadFiles(raw,raw._fdir || '')" :disabled="raw._filesLoading">{{ t(raw._filesLoading ? '讀取中…' : raw._files ? '重新整理檔案' : '載入檔案') }}</button></div>
+                    <p class="error-text" role="alert" v-if="raw._filesError">{{ t(raw._filesError) }}</p>
+                    <template v-if="raw._files"><div class="file-toolbar"><span class="mono file-path">{{ raw._fdir || t('預設目錄') }}</span><button class="btn" @click="loadFiles(raw,'')">{{ t('回預設目錄') }}</button><label class="btn upload-label">{{ t('上傳檔案') }}<input type="file" :disabled="raw._uploading" @change="upload(raw,$event)"></label></div>
+                      <div class="file-row" v-for="f in raw._files" :key="f.attributes.name"><button class="file-name directory" v-if="!f.attributes.is_file" @click="loadFiles(raw,filePath(raw,f))">{{ f.attributes.name }} /</button><span class="file-name" v-else>{{ f.attributes.name }}</span><span class="file-size mono">{{ f.attributes.is_file ? fmtSize(f.attributes.size) : t('目錄') }}</span><button class="btn" v-if="f.attributes.is_file" @click="download(raw,f)">{{ t('下載') }}</button><button class="btn btn-danger" @click="delFile(raw,f)">{{ t('刪除') }}</button></div><p class="muted file-empty" v-if="!raw._files.length">{{ t('這個目錄還沒有檔案。') }}</p>
                     </template>
                   </div>
                 </div>
               </details>
-              <details><summary><span>名稱與備註</span><span class="summary-value">{{ raw.settings.note || '未設定' }}</span></summary><form class="detail-body note-form" @submit.prevent="saveNote(raw)"><label>顯示名稱<input class="input" v-model="raw._note" maxlength="30" placeholder="最多 30 字"></label><button class="btn">儲存備註</button></form></details>
+              <details><summary><span>{{ t('名稱與備註') }}</span><span class="summary-value">{{ raw.settings.note || t('未設定') }}</span></summary><form class="detail-body note-form" @submit.prevent="saveNote(raw)"><label>{{ t('顯示名稱') }}<input class="input" v-model="raw._note" maxlength="30" :placeholder="t('最多 30 字')"></label><button class="btn">{{ t('儲存備註') }}</button></form></details>
             </div>
-            <div class="bot-footer"><span class="mono">{{ view.username }}</span><button class="btn btn-quiet danger-text" @click="delBot(raw)">移除機器人</button></div>
+            <div class="bot-footer"><span class="mono">{{ view.username }}</span><button class="btn btn-quiet danger-text" @click="delBot(raw)">{{ t('移除機器人') }}</button></div>
           </section>
         </div>
 
-        <aside id="workspace-settings" aria-label="工作區設定" v-if="!selectedBotId">
-          <section class="side-panel" id="add-bot"><h2>新增機器人</h2><p class="muted">連線到你的 Minecraft 伺服器。</p><form @submit.prevent="addBot"><label for="new-host">伺服器位址</label><input id="new-host" class="input mono" v-model="af.host" placeholder="play.example.com" required><label for="new-user">玩家名稱</label><input id="new-user" class="input mono" v-model="af.username" placeholder="例如 MineBot_01" maxlength="16" required><span class="field-hint">1–16 個字元</span><p class="error-text" role="alert" v-if="afErr">{{ afErr }}</p><button class="btn btn-primary full" :disabled="busy.add">{{ busy.add ? '正在新增…' : '新增機器人' }}</button></form></section>
-          <section class="system-panel"><h2>系統狀態</h2><dl><div><dt>記憶體使用</dt><dd class="mono">{{ sys ? sys.percentNum+'%' : '尚未取得' }}</dd></div><div><dt>已用 / 總量</dt><dd class="mono">{{ sys ? sys.usedGb+' / '+sys.totalGb+' GB' : '尚未取得' }}</dd></div></dl><p class="error-text" v-if="systemError">{{ systemError }}</p>
-            <div class="core-section"><div class="section-label"><h3>核心服務</h3><span class="core-state"><span class="dot" :class="core.status==='running'?'dot-on':'dot-off'"></span>{{ coreLabel }}</span></div><p class="muted">獨立於機器人的擴充服務。</p><p class="error-text" v-if="coreError" role="alert">{{ coreError }}</p><p class="core-detail" v-else-if="core.detail">{{ core.detail }}</p><button class="btn full" :disabled="busy.core || core.status==='starting'" @click="coreAction(core.status==='running'?'stop':'start')">{{ busy.core ? '處理中…' : core.status==='running' ? '停止核心服務' : '啟動核心服務' }}</button></div>
+        <aside id="workspace-settings" :aria-label="t('工作區設定')" v-if="!selectedBotId">
+          <section class="side-panel" id="add-bot"><h2>{{ t('新增機器人') }}</h2><p class="muted">{{ t('連線到你的 Minecraft 伺服器。') }}</p><form @submit.prevent="addBot"><label for="new-host">{{ t('伺服器位址') }}</label><input id="new-host" class="input mono" v-model="af.host" placeholder="play.example.com" required><label for="new-user">{{ t('玩家名稱') }}</label><input id="new-user" class="input mono" v-model="af.username" :placeholder="t('例如 MineBot_01')" maxlength="16" required><span class="field-hint">{{ t('1–16 個字元') }}</span><p class="error-text" role="alert" v-if="afErr">{{ t(afErr) }}</p><button class="btn btn-primary full" :disabled="busy.add">{{ t(busy.add ? '正在新增…' : '新增機器人') }}</button></form></section>
+          <section class="system-panel"><h2>{{ t('系統狀態') }}</h2><dl><div><dt>{{ t('記憶體使用') }}</dt><dd class="mono">{{ sys ? sys.percentNum+'%' : t('尚未取得') }}</dd></div><div><dt>{{ t('已用 / 總量') }}</dt><dd class="mono">{{ sys ? sys.usedGb+' / '+sys.totalGb+' GB' : t('尚未取得') }}</dd></div></dl><p class="error-text" v-if="systemError">{{ t(systemError) }}</p>
+            <div class="core-section"><div class="section-label"><h3>{{ t('核心服務') }}</h3><span class="core-state"><span class="dot" :class="core.status==='running'?'dot-on':'dot-off'"></span>{{ coreLabel }}</span></div><p class="muted">{{ t('獨立於機器人的擴充服務。') }}</p><p class="error-text" v-if="coreError" role="alert">{{ t(coreError) }}</p><p class="core-detail" v-else-if="core.detail">{{ core.detail }}</p><button class="btn full" :disabled="busy.core || core.status==='starting'" @click="coreAction(core.status==='running'?'stop':'start')">{{ t(busy.core ? '處理中…' : core.status==='running' ? '停止核心服務' : '啟動核心服務') }}</button></div>
           </section>
-          <p class="sidebar-note">設定會儲存至伺服器，<br>機器人重新連線後仍會保留。</p>
+          <p class="sidebar-note">{{ t('設定會儲存至伺服器，') }}<br>{{ t('機器人重新連線後仍會保留。') }}</p>
         </aside>
       </div>
     </main>
-    <footer class="workspace-footer"><span>MineBot</span><span>Minecraft 機器人控制台</span></footer>
+    <footer class="workspace-footer"><span>MineBot</span><span>{{ t('Minecraft 機器人控制台') }}</span></footer>
   </template>
-  <div class="toast" :class="{'toast-error':toast.err}" v-if="toast.msg" role="status">{{ toast.msg }}<button @click="toast.msg=''" aria-label="關閉通知">關閉</button></div>
+  <div class="toast" :class="{'toast-error':toast.err}" v-if="toast.msg" role="status">{{ t(toast.msg,toast.params) }}<button @click="toast.msg=''" :aria-label="t('關閉通知')">{{ t('關閉') }}</button></div>
 </div>
-<noscript>MineBot 控制台需要啟用 JavaScript。</noscript>
+<noscript>MineBot 控制台需要啟用 JavaScript。 / 请启用 JavaScript。</noscript>
 </body>
 </html>

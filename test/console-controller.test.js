@@ -13,6 +13,7 @@ function loadConsole(api, hash = '') {
     const browser = { location: { hash }, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } };
     const context = {
         APP: require('../public/app-core.js'),
+        UI_PREFS: require('../public/preferences.js'),
         Vue: { createApp: value => { options = value; return { mount() {} }; } },
         localStorage: { getItem: () => 'test-token', removeItem() {}, setItem() {} },
         setInterval: () => 10, clearInterval: id => cleared.push(id),
