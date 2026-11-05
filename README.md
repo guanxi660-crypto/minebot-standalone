@@ -34,7 +34,7 @@
 | 🌐 Argo 隧道 | 固定 token / TunnelSecret JSON / 临时隧道三种模式 |
 | 🔑 自动密钥 | Reality X25519 密钥对自动生成并持久化；TLS 自签证书自动生成 |
 | 📡 订阅服务 | base64 订阅通过 HTTP 暴露，支持 Telegram 推送 / 节点上传 / 自动保活 |
-| 🎛️ API 控制 | 通过 `POST /api/core` 启停核心服务，无需重启进程（面板不提供入口） |
+| 🎛️ 核心控制 | 從面板「系統狀態」或 `POST /api/core` 啟停核心服務，無需重啟進程 |
 | 🕵️ 伪装命名 | 本地库文件伪装命名（`libcodec.so` / `libtransport.so`），日志不含协议/组件字眼 |
 
 ### 状态采集（status，开关 `STATUS_ENABLED`）
@@ -94,14 +94,17 @@ http://<服务器IP>:4681
 
 ### 场景 A：只用挂机面板（最简，推荐新手）
 
-**上传 4 个文件：**
+**上傳 7 個檔案：**
 
 ```
 ├── index.js               # 主程序（必需）
 ├── package.json           # 依赖清单（必需，缺了不会 npm install）
 ├── package-lock.json      # 锁定版本（推荐）
 └── public/
-    └── index.html         # 面板页面（必需，缺了页面打不开）
+    ├── index.html         # Vue 3 控制台頁面（必需）
+    ├── app-core.js        # 視圖模型、輸入驗證與日誌轉義（必需）
+    ├── console.js         # 登入、輪詢與操作邏輯（必需）
+    └── console.css        # 深色主題與響應式樣式（必需）
 ```
 
 **外加复制一份配置：**
@@ -175,6 +178,9 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 | `package.json` | ✅ | ✅ | ✅ | 依赖清单，必需 |
 | `package-lock.json` | ✅ | ✅ | ✅ | 版本锁定，推荐 |
 | `public/index.html` | ✅ | ✅ | ✅ | 面板页面，必需 |
+| `public/app-core.js` | ✅ | ✅ | ✅ | 視圖模型與輸入驗證，必需 |
+| `public/console.js` | ✅ | ✅ | ✅ | 控制台互動邏輯，必需 |
+| `public/console.css` | ✅ | ✅ | ✅ | 控制台樣式，必需 |
 | `.env.sample` → `.env` | ✅ | ✅ | ✅ | 复制后按需改 |
 | `status` | — | ✅ | ✅ | 状态采集模块（可选） |
 | `core` | — | — | ✅ | 代理核心模块（可选） |
@@ -219,11 +225,11 @@ node index.js
 index.js          # 改动了主程序
 package.json      # 改了依赖
 package-lock.json # 改了依赖
-public/index.html # 改了面板页面
+public/           # 面板更新時一併上傳 index.html、app-core.js、console.js、console.css
 core / status     # 改了模块配置区
 ```
 
-然后重启。`.env` 和 `bots_config.json` 不要动。
+後端變更後重啟；僅更新 `public/` 時重新整理瀏覽器即可。`.env` 和 `bots_config.json` 請保留。
 
 
 ---
@@ -301,7 +307,7 @@ const ARGO_AUTH   = process.env.ARGO_AUTH   || '';         // ← 填 tunnel tok
 
 ### 核心服务 API 控制
 
-面板**不提供**核心服务启停入口，需通过 API 控制（需先登录拿 token）：
+面板「系統狀態」提供核心服務啟停入口，也可以透過 API 控制（需先登入取得 token）：
 
 ```bash
 # 1. 登录拿 token
@@ -383,16 +389,17 @@ const REPORT_TOKEN = process.env.REPORT_TOKEN || '';      // ← 填客户端凭
 
 ### 面板内使用
 
-1. 打开面板 → **登录**
-2. 顶部输入 **IP:PORT**（Minecraft 服务器地址）和 **角色名**
-3. 点击 **部署角色** → 机器人上线
-4. 每个机器人卡片支持：
-   - **模式开关**：AI 视角 / 巡逻 / 喊话
-   - **服务器名称备注**：自定义显示名，重连后不还原
-   - **定时重启**：设定分钟/小时，到点自动发 `/restart`
-   - **翼龙管理**：连接测试 / 文件管理 / 电源控制
-   - 实时日志（最近 30 条）
-5. 右下角控制条：内存占用监控（核心服务控制请用 API，见上文「核心服务 API 控制」）
+1. 開啟面板並登入工作區。
+2. 在「新增機器人」填入 **伺服器位址**與 **玩家名稱**；預設連接埠為 25565，也可填入 `host:port`。
+3. 按下 **新增機器人**。桌機表單位於側欄；手機可用頁首按鈕跳至表單。
+4. 總覽以小卡片呈現名稱、狀態、位址與行為摘要；點擊卡片進入 `#/bots/:id`，只展示該機器人的完整內容。
+5. 詳情提供重新連線、立即重啟、四種行為開關（AI 視角、自主行走、自動聊天、自動挖礦），以及定時重啟、翼龍管理與名稱備註。使用「返回機器人總覽」或瀏覽器上一頁返回；同一次登入內切頁會保留未儲存草稿。
+6. 即時日誌依 API 回傳顯示，畫面最多保留 50 筆；機器人每 5 秒同步一次。
+7. 總覽側欄的「系統狀態」顯示記憶體用量與核心服務啟停；核心狀態每 30 秒同步一次。桌機側欄會隨頁面捲動保持可見，短視窗可捲動側欄內容；手機採正常頁面排列。
+
+詳情網址可重新整理；目前後端重啟會重建機器人 ID，舊網址失效時請返回總覽重新選取。
+
+前端採 Vue 3 CDN，無須建置。從舊版升級後請重新登入。設計規範見 [DESIGN.md](DESIGN.md)，畫面預覽、測試方法與已知限制見 [前端說明](docs/frontend.md)。
 
 ### 面板鉴权说明
 
@@ -409,7 +416,11 @@ const REPORT_TOKEN = process.env.REPORT_TOKEN || '';      // ← 填客户端凭
 ├── index.js               # 主程序（面板 API + 机器人管理 + 登录鉴权 + 模块集成）
 ├── core                   # 原生核心服务模块（无扩展名）
 ├── status                 # 监控上报模块 (无扩展名)
-├── public/index.html      # Web 控制面板前端
+├── public/
+│   ├── index.html      # Vue 3 控制台模板
+│   ├── app-core.js     # 視圖模型、驗證與安全日誌
+│   ├── console.js      # 登入、輪詢與操作
+│   └── console.css     # 深色精密控制台樣式
 ├── package.json           # 依赖清单
 ├── ecosystem.config.cjs   # pm2 配置文件
 ├── install.sh             # 一键部署脚本
