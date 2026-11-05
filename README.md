@@ -94,7 +94,7 @@ http://<服务器IP>:4681
 
 ### 场景 A：只用挂机面板（最简，推荐新手）
 
-**上傳 7 個檔案：**
+**上傳 8 個檔案：**
 
 ```
 ├── index.js               # 主程序（必需）
@@ -103,8 +103,9 @@ http://<服务器IP>:4681
 └── public/
     ├── index.html         # Vue 3 控制台頁面（必需）
     ├── app-core.js        # 視圖模型、輸入驗證與日誌轉義（必需）
+    ├── preferences.js     # 繁簡翻譯與亮暗偏好（必需）
     ├── console.js         # 登入、輪詢與操作邏輯（必需）
-    └── console.css        # 深色主題與響應式樣式（必需）
+    └── console.css        # 亮暗主題與響應式樣式（必需）
 ```
 
 **外加复制一份配置：**
@@ -179,6 +180,7 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 | `package-lock.json` | ✅ | ✅ | ✅ | 版本锁定，推荐 |
 | `public/index.html` | ✅ | ✅ | ✅ | 面板页面，必需 |
 | `public/app-core.js` | ✅ | ✅ | ✅ | 視圖模型與輸入驗證，必需 |
+| `public/preferences.js` | ✅ | ✅ | ✅ | 繁簡翻譯與亮暗偏好，必需 |
 | `public/console.js` | ✅ | ✅ | ✅ | 控制台互動邏輯，必需 |
 | `public/console.css` | ✅ | ✅ | ✅ | 控制台樣式，必需 |
 | `.env.sample` → `.env` | ✅ | ✅ | ✅ | 复制后按需改 |
@@ -225,7 +227,7 @@ node index.js
 index.js          # 改动了主程序
 package.json      # 改了依赖
 package-lock.json # 改了依赖
-public/           # 面板更新時一併上傳 index.html、app-core.js、console.js、console.css
+public/           # 面板更新時一併上傳 index.html、app-core.js、preferences.js、console.js、console.css
 core / status     # 改了模块配置区
 ```
 
@@ -389,6 +391,8 @@ const REPORT_TOKEN = process.env.REPORT_TOKEN || '';      // ← 填客户端凭
 
 ### 面板内使用
 
+頁頂「語言」可切換繁體中文／简体中文，「外觀」可切換暗色／亮色；登入前後都能使用。預設繁中暗色，選擇保存於目前瀏覽器，重新整理或登出後仍保留。機器人名稱、備註、檔名與原始日誌不會被轉換。
+
 1. 開啟面板並登入工作區。
 2. 在「新增機器人」填入 **伺服器位址**與 **玩家名稱**；預設連接埠為 25565，也可填入 `host:port`。
 3. 按下 **新增機器人**。桌機表單位於側欄；手機可用頁首按鈕跳至表單。
@@ -419,8 +423,9 @@ const REPORT_TOKEN = process.env.REPORT_TOKEN || '';      // ← 填客户端凭
 ├── public/
 │   ├── index.html      # Vue 3 控制台模板
 │   ├── app-core.js     # 視圖模型、驗證與安全日誌
+│   ├── preferences.js  # 繁簡翻譯、主題及偏好保存
 │   ├── console.js      # 登入、輪詢與操作
-│   └── console.css     # 深色精密控制台樣式
+│   └── console.css     # 亮暗精密控制台樣式
 ├── package.json           # 依赖清单
 ├── ecosystem.config.cjs   # pm2 配置文件
 ├── install.sh             # 一键部署脚本
