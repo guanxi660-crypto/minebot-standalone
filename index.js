@@ -501,6 +501,61 @@ function tryMineOnce(bot, botMeta) {
     return 'mining';
 }
 
+// ======================== Velocity Modern Forwarding ========================
+// 后端启用 velocity modern forwarding 时, login 阶段会发 login_plugin_request
+// (channel=velocity:player_info_request), 要求客户端按 Velocity 公开协议自报身份;
+// 不回或格式不对会被代理直接掐断 (EOFException)。
+// 协议: https://docs.papermc.io/velocity/player-information-forwarding
+
+function velocityVarInt(value) {
+    value = Number(value) >>> 0;
+    const out = [];
+    do {
+        let b = value & 0x7f;
+        value >>>= 7;
+        if (value !== 0) b |= 0x80;
+        out.push(b);
+    } while (value !== 0);
+    return Buffer.from(out);
+}
+
+function velocityString(str) {
+    const payload = Buffer.from(String(str), 'utf8');
+    return Buffer.concat([velocityVarInt(payload.length), payload]);
+}
+
+// offline 模式 UUID (login_plugin_request 早于 login_success, 此时 profile 还没到手)
+function offlineUuid(name) {
+    const hash = crypto.createHash('md5').update('OfflinePlayer:' + name, 'utf8').digest();
+    hash[6] = (hash[6] & 0x0f) | 0x30; // version 3
+    hash[8] = (hash[8] & 0x3f) | 0x80; // IETF variant
+    const h = hash.toString('hex');
+    return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+
+// 构造 velocity:player_info 回复 (v3): 版本 + 请求透传数据 + UUID + 用户名 + 属性 + 公钥标记
+function buildVelocityPlayerInfo(requestData, bot, username) {
+    const c = bot._client;
+    let uuid = String((c.session && c.session.selectedProfile && c.session.selectedProfile.id) || c.uuid || '').replace(/-/g, '');
+    if (uuid.length !== 32) uuid = offlineUuid(username).replace(/-/g, '');
+    const props = (c.profile && Array.isArray(c.profile.properties)) ? c.profile.properties : [];
+    const chunks = [
+        velocityVarInt(3),            // forwarding 版本 3
+        Buffer.from(requestData || Buffer.alloc(0)), // 请求里的 address+port 原样回传
+        Buffer.from(uuid, 'hex'),     // 16 字节 UUID
+        velocityString(username),
+        velocityVarInt(props.length)
+    ];
+    for (const p of props) {
+        chunks.push(velocityString(p.name || ''));
+        chunks.push(velocityString(p.value || ''));
+        chunks.push(Buffer.from([p.signature ? 1 : 0]));
+        if (p.signature) chunks.push(velocityString(p.signature));
+    }
+    chunks.push(Buffer.from([0]));    // 无 profile 公钥 (optional key = false)
+    return Buffer.concat(chunks);
+}
+
 /** 停止当前挖掘目标 (关闭开关/被删除/关服时调用) */
 function stopMining(botMeta) {
     if (botMeta.oreTimer) { clearInterval(botMeta.oreTimer); botMeta.oreTimer = null; }
@@ -540,6 +595,18 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
         const bot = mineflayer.createBot({ host: finalHost, port: finalPort, username: username, auth: 'offline', hideErrors: true, physicsEnabled: needPhysics, connectTimeout: CONNECT_TIMEOUT });
         bot.loadPlugin(pathfinder);
         botMeta.instance = bot;
+
+        // Velocity modern forwarding: login 态按协议自报身份 (channel 匹配才回, 未开启的服不会发)
+        bot._client.on('login_plugin_request', (packet) => {
+            if (!packet || packet.channel !== 'velocity:player_info_request') return;
+            try {
+                const data = buildVelocityPlayerInfo(packet.data, bot, username);
+                bot._client.write('login_plugin_response', { messageId: packet.messageId, successful: true, data });
+                pushLog('📡 Velocity 转发握手: player_info 已回复', 'text-cyan-400');
+            } catch (err) {
+                pushLog(`❌ Velocity 回复失败: ${err.message}`, 'text-red-500');
+            }
+        });
 
         bot.once('spawn', () => {
             botMeta.status = "在线";
