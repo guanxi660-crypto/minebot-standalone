@@ -469,3 +469,5 @@ MIT
 ## 🙏 致谢
 
 基于 [debbide/minebot](https://github.com/debbide/minebot)（mineplayer-bot-node）修改。
+
+- [@s12ryt](https://github.com/s12ryt)：重作 Web 控制台，新增單機詳情視圖、繁體／簡體中文切換與暗色／亮色主題切換（[PR #1](https://github.com/guanxi660-crypto/minebot-standalone/pull/1)）。
