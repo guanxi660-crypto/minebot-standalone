@@ -188,7 +188,9 @@ cp .env.sample .env       # 然后按需改端口 / 密码
 | `core` | — | — | ✅ | 代理核心模块（可选） |
 | `install.sh` | 可选 | 可选 | 可选 | 一键部署脚本 |
 
-**永远不要上传**：`.env`（含密码）、`bots_config.json`（你的机器人配置）、`node_modules/`、`.npm/`
+**不要提交到 Git 仓库（避免泄露凭据）**：`.env`（含密码）、`bots_config.json`（你的机器人配置）。
+
+**不要上传到服务器（由 `npm install` 在服务器端生成，体积大）**：`node_modules/`、`.npm/`。
 
 > 💡 **`bots_config.json` 在更新代码时务必保留** —— 那是你的机器人列表和设置，覆盖了就没了。
 
