@@ -70,7 +70,7 @@
           <section class="bot-card" v-for="{ raw, view } in detailViews" :key="raw.id" :data-bot-id="raw.id" :aria-labelledby="'bot-'+encodeURIComponent(raw.id)">
             <div class="bot-header">
               <div class="bot-identity"><div class="bot-title-row"><h3 :id="'bot-'+encodeURIComponent(raw.id)">{{ view.name }}</h3><span class="status-label" :class="view.online ? 'status-online' : 'status-offline'"><span class="dot" :class="view.online ? 'dot-on' : 'dot-off'"></span>{{ statusLabel(view.statusText) }}</span></div><p class="bot-host mono">{{ view.username }}<span class="host-divider"> / </span>{{ view.host }}:{{ view.port }}</p></div>
-              <div class="bot-actions"><button class="btn" @click="act(raw,'reconnect')">{{ t('重新連線') }}</button><button class="btn" @click="act(raw,'restart-now')">{{ t('立即重啟') }}</button></div>
+              <div class="bot-actions"><button class="btn" @click="act(raw,'pause')" v-if="!raw.paused">{{ t('暫停') }}</button><button class="btn" @click="act(raw,'pause')" v-else>{{ t('恢復') }}</button><button class="btn" @click="act(raw,'reconnect')">{{ t('重新連線') }}</button><button class="btn" @click="act(raw,'restart-now')">{{ t('立即重啟') }}</button></div>
             </div>
             <div class="log-section">
               <div class="log-heading"><h4>{{ t('即時日誌') }}</h4><span class="log-meta">{{ view.logs.length ? t('最近 {count} 筆',{count:Math.min(view.logs.length,50)}) : t('等待訊息') }}</span><span class="player-count" v-if="view.online">{{ t('{count} 位玩家在線',{count:view.playerCount}) }}</span></div>

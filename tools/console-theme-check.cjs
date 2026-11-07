@@ -72,6 +72,10 @@ async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByRole('button', { name: '重新连接', exact: true }).click();
     await page.locator('.toast').filter({ hasText: '重新连接指令已发送' }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: '暂停', exact: true }).click();
+    await page.locator('.toast').filter({ hasText: '暂停指令已发送' }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: '恢复', exact: true }).click();
+    await page.locator('.toast').filter({ hasText: '恢复指令已发送' }).waitFor({ timeout: 5000 });
     await page.locator('#ui-locale').selectOption('zh-Hant');
     check((await page.locator('.toast').textContent()).includes('重新連線指令已送出'), '已顯示通知即時隨語言切換');
     await page.locator('#ui-locale').selectOption('zh-Hans');

@@ -108,6 +108,7 @@ function broadcastBotUpdate(botId, bot) {
         host: bot.targetHost,
         port: bot.targetPort,
         status: bot.status,
+        paused: !!bot.paused,
         logs: bot.logs,
         settings: bot.settings,
         playerCount: bot.playerCount,
@@ -567,6 +568,82 @@ function stopMining(botMeta) {
     botMeta.isMoving = false;
 }
 
+// 行为定时器统一入口: 巡逻/喊话/AI 主循环 + 挖矿扫描, spawn 后与暂停恢复共用
+// paused 状态下不启动任何定时器 —— 暂停 = 保持在线但挂起全部行为
+function startBehaviorTimers(botMeta, bot, pushLog) {
+    if (botMeta.paused) return;
+    if (botMeta.afkTimer) clearInterval(botMeta.afkTimer);
+    botMeta.afkTimer = setInterval(() => {
+        if (!bot.entity) return;
+        // 刷新同服务器玩家数量 (含 bot 自身)
+        const pc = Object.keys(bot.players).length || 0;
+        if (pc !== botMeta.playerCount) {
+            botMeta.playerCount = pc;
+            broadcastBotUpdate(botMeta.id, botMeta);
+        }
+        // 重启逻辑
+        if (botMeta.settings.restartInterval > 0 && (Date.now() - botMeta.lastRestartTick) / 60000 >= botMeta.settings.restartInterval) {
+            bot.chat('/restart'); botMeta.lastRestartTick = Date.now(); pushLog(`⏰ 周期任务: 执行 /restart`, 'text-red-500 font-bold');
+        }
+        // AI视角
+        if (botMeta.settings.ai && !botMeta.isMoving) {
+            const target = bot.nearestEntity(p => p.type === 'player');
+            if (target) bot.lookAt(target.position.offset(0, 1.6, 0));
+        }
+        // 巡逻
+        if (botMeta.settings.walk && !botMeta.isMoving && Math.random() > PATROL_RANDOM_THRESHOLD) {
+            botMeta.isMoving = true;
+            const targetPos = botMeta.centerPos.offset((Math.random()-0.5)*12, 0, (Math.random()-0.5)*12);
+            pushLog(`👣 巡逻: 前往点 [${Math.round(targetPos.x)}, ${Math.round(targetPos.z)}]`, 'text-emerald-500');
+            bot.pathfinder.setGoal(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1));
+        }
+        // 喊话 (冷却90秒 + 随机触发 + 拟人化内容)
+        if (botMeta.settings.chat && (Date.now() - botMeta.lastChatTick) >= CHAT_COOLDOWN_MS && Math.random() > CHAT_RANDOM_THRESHOLD) {
+            const m = generateChatMessage(Object.keys(bot.players).length || 0);
+            botMeta.lastChatTick = Date.now();
+            bot.chat(m); pushLog(`💬 拟人发话: ${m}`, 'text-orange-400');
+        }
+    }, BOT_ACTION_INTERVAL);
+
+    // --- [ 自动找矿定时器 ] ---
+    // 独立于巡逻: 挖矿有自己的目标/超时状态, 关闭巡逻也能挖
+    if (botMeta.settings.mine) {
+        if (botMeta.oreTimer) clearInterval(botMeta.oreTimer);
+        botMeta.oreTimer = setInterval(() => {
+            if (!bot.entity || !botMeta.instance) return;
+            // 卡死自检: 目标存在但超过 ORE_STUCK_TIMEOUT 没完成, pathfinder 多半已放弃
+            // (不可达时 goal_reached 不会触发) —— isMoving 卡 true 会永久阻塞巡逻/AI视角, 强制复位
+            if (botMeta.oreTarget && Date.now() - botMeta.oreTargetAt > ORE_STUCK_TIMEOUT) {
+                botMeta.oreTarget = null;
+                botMeta.isMoving = false;
+                pushLog(`⏱️ 挖掘超时, 重置移动状态`, 'text-yellow-600');
+            }
+            const r = tryMineOnce(bot, botMeta);
+            // idle/unreachable 时清掉目标, 下轮重新扫描
+            if (r === 'idle' || r === 'unreachable' || r === 'stuck') botMeta.oreTarget = null;
+        }, ORE_SCAN_INTERVAL);
+        pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格, 发现矿脉后 bot 会自动寻路过去挖掘)`, 'text-amber-500 font-bold');
+    }
+}
+
+// 暂停/恢复行为: paused=true 挂起全部定时器并停止当前寻路, false 重新拉起
+function setBotPaused(botMeta, paused) {
+    botMeta.paused = paused;
+    if (paused) {
+        if (botMeta.afkTimer) { clearInterval(botMeta.afkTimer); botMeta.afkTimer = null; }
+        if (botMeta.oreTimer) { clearInterval(botMeta.oreTimer); botMeta.oreTimer = null; }
+        botMeta.oreTarget = null;
+        const inst = botMeta.instance;
+        if (inst && inst.pathfinder) {
+            try { inst.pathfinder.setGoal(null); } catch (e) {}
+        }
+        botMeta.isMoving = false;
+    } else {
+        const inst = botMeta.instance;
+        if (inst) startBehaviorTimers(botMeta, inst, botMeta.pushLog);
+    }
+}
+
 async function createSmartBot(id, host, port, username, existingLogs = [], settings = null) {
     let finalHost = host.trim();
     let finalPort = parseInt(port) || 25565;
@@ -575,9 +652,9 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
         finalHost = parts[0]; finalPort = parseInt(parts[1]) || 25565;
     }
 
-    const defaultSettings = { walk: false, ai: true, chat: false, mine: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
+    const defaultSettings = { walk: false, ai: false, chat: false, mine: false, restartInterval: 0, pterodactyl: { url: '', key: '', id: '', defaultDir: '/' } };
     const note = (settings && settings.note) || username;
-    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, note, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, oreTimer: null, oreTarget: null, oreTargetAt: 0, isRepairing: false, isReconnecting: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0 };
+    const botMeta = { id, username, targetHost: finalHost, targetPort: finalPort, note, status: "连接中", logs: Array.isArray(existingLogs) ? existingLogs.slice(0, LOG_LIMIT) : [], settings: settings || defaultSettings, instance: null, afkTimer: null, oreTimer: null, oreTarget: null, oreTargetAt: 0, isRepairing: false, isReconnecting: false, lastRestartTick: Date.now(), isMoving: false, playerCount: 0, lastChatTick: 0, paused: !!(settings && settings.paused) };
     activeBots.set(id, botMeta);
 
     const pushLog = (msg, colorClass = '') => {
@@ -626,51 +703,7 @@ async function createSmartBot(id, host, port, username, existingLogs = [], setti
             movements.canDig = true;
             bot.pathfinder.setMovements(movements);
 
-            if (botMeta.afkTimer) clearInterval(botMeta.afkTimer);
-            botMeta.afkTimer = setInterval(() => {
-                if (!bot.entity) return;
-                // 刷新同服务器玩家数量 (含 bot 自身)
-                const pc = Object.keys(bot.players).length || 0;
-                if (pc !== botMeta.playerCount) {
-                    botMeta.playerCount = pc;
-                    broadcastBotUpdate(id, botMeta);
-                }
-                // 重启逻辑
-                if (botMeta.settings.restartInterval > 0 && (Date.now() - botMeta.lastRestartTick) / 60000 >= botMeta.settings.restartInterval) {
-                    bot.chat('/restart'); botMeta.lastRestartTick = Date.now(); pushLog(`⏰ 周期任务: 执行 /restart`, 'text-red-500 font-bold');
-                }
-                // AI视角
-                if (botMeta.settings.ai && !botMeta.isMoving) {
-                    const target = bot.nearestEntity(p => p.type === 'player');
-                    if (target) bot.lookAt(target.position.offset(0, 1.6, 0));
-                }
-                // 巡逻
-                if (botMeta.settings.walk && !botMeta.isMoving && Math.random() > PATROL_RANDOM_THRESHOLD) {
-                    botMeta.isMoving = true;
-                    const targetPos = botMeta.centerPos.offset((Math.random()-0.5)*12, 0, (Math.random()-0.5)*12);
-                    pushLog(`👣 巡逻: 前往点 [${Math.round(targetPos.x)}, ${Math.round(targetPos.z)}]`, 'text-emerald-500');
-                    bot.pathfinder.setGoal(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1));
-                }
-                // 喊话 (冷却90秒 + 随机触发 + 拟人化内容)
-                if (botMeta.settings.chat && (Date.now() - botMeta.lastChatTick) >= CHAT_COOLDOWN_MS && Math.random() > CHAT_RANDOM_THRESHOLD) {
-                    const m = generateChatMessage(Object.keys(bot.players).length || 0);
-                    botMeta.lastChatTick = Date.now();
-                    bot.chat(m); pushLog(`💬 拟人发话: ${m}`, 'text-orange-400');
-                }
-            }, BOT_ACTION_INTERVAL);
-
-            // --- [ 自动找矿定时器 ] ---
-            // 独立于巡逻: 挖矿有自己的目标/超时状态, 关闭巡逻也能挖
-            if (botMeta.settings.mine) {
-                if (botMeta.oreTimer) clearInterval(botMeta.oreTimer);
-                botMeta.oreTimer = setInterval(() => {
-                    if (!bot.entity || !botMeta.instance) return;
-                    const r = tryMineOnce(bot, botMeta);
-                    // idle/unreachable 时清掉目标, 下轮重新扫描
-                    if (r === 'idle' || r === 'unreachable' || r === 'stuck') botMeta.oreTarget = null;
-                }, ORE_SCAN_INTERVAL);
-                pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格)`, 'text-amber-500 font-bold');
-            }
+            startBehaviorTimers(botMeta, bot, pushLog);
         });
 
         bot.on('goal_reached', () => {
@@ -784,6 +817,7 @@ app.get("/api/bots", (req, res) => {
             host: b.targetHost,
             port: b.targetPort,
             status: b.status,
+            paused: !!b.paused,
             logs: b.logs,
             settings: b.settings,
             playerCount: b.playerCount,
@@ -820,14 +854,15 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
     bot.pushLog(`🔘 切换: ${label} -> ${statusText}`, 'text-yellow-400 font-bold');
 
     // 物理引擎: 巡逻或挖矿任一开启即需保持激活(挖矿要靠物理引擎执行挖掘动作)
+    // 日志标明本次操作是谁激活的, 避免开挖矿时被误读成"行走过来了"
     if ((type === 'walk' || type === 'mine') && bot.instance) {
         const needPhysics = !!(bot.settings.walk || bot.settings.mine);
         bot.instance.physicsEnabled = needPhysics;
         if (needPhysics) {
             const by = [];
             if (bot.settings.walk) by.push('巡逻');
-            if (bot.settings.mine) by.push('挖矿');
-            bot.pushLog(`⚙️ 物理引擎: 已激活 (${by.join('+')})`, 'text-yellow-600 font-bold');
+            if (bot.settings.mine) by.push('挖矿寻路');
+            bot.pushLog(`⚙️ 物理引擎: 已激活 (${by.join('+')}${bot.settings.mine && type === 'mine' && !bot.settings.walk ? ' — 挖矿过程中 bot 会寻路移动, 与巡逻无关' : ''})`, 'text-yellow-600 font-bold');
         } else {
             bot.instance.pathfinder.setGoal(null);
             bot.isMoving = false;
@@ -837,9 +872,10 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
 
     // 挖矿开关: 开启时启动扫描定时器, 关闭时立即清掉并清理当前目标
     // 注意: bot 是 botMeta(元数据), 真实实例是 bot.instance —— entity 等字段都在实例上
+    // 暂停态下只改设置不启动定时器, 恢复时由 startBehaviorTimers 统一拉起
     if (type === 'mine') {
         const inst = bot.instance;
-        if (bot.settings.mine) {
+        if (bot.settings.mine && !bot.paused) {
             if (!inst || !inst.entity) {
                 bot.pushLog(`⚠️ 未连接到服务器, 无法开启挖矿`, 'text-red-400');
             } else {
@@ -851,7 +887,7 @@ app.post("/api/bots/:id/toggle", apiErrorHandler(async (req, res) => {
                     const r = tryMineOnce(cur, bot);
                     if (r === 'idle' || r === 'unreachable' || r === 'stuck') bot.oreTarget = null;
                 }, ORE_SCAN_INTERVAL);
-                bot.pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格)`, 'text-amber-500 font-bold');
+                bot.pushLog(`⛏️ 自动找矿已开启 (半径 ${ORE_SCAN_RADIUS} 格, 发现矿脉后 bot 会自动寻路过去挖掘)`, 'text-amber-500 font-bold');
             }
         } else {
             stopMining(bot);
@@ -900,6 +936,25 @@ app.post("/api/bots/:id/reconnect", apiErrorHandler(async (req, res) => {
     }, 1000);
 
     res.json({ success: true, message: '正在重连' });
+}));
+
+app.post("/api/bots/:id/pause", apiErrorHandler(async (req, res) => {
+    const bot = validateBot(req.params.id);
+    const paused = !!req.body.paused;
+
+    if (paused === bot.paused) {
+        // 重复指令不重复记日志, 只同步状态
+        broadcastBotUpdate(req.params.id, bot);
+        return res.json({ success: true, message: paused ? '已暂停' : '已恢复', paused });
+    }
+
+    setBotPaused(bot, paused);
+    bot.settings.paused = paused;
+    bot.pushLog(paused ? `⏸️ 已暂停: 保持在线, 行为挂起` : `▶️ 已恢复: 行为继续`, paused ? 'text-yellow-400 font-bold' : 'text-emerald-400 font-bold');
+
+    await saveBotsConfig();
+    broadcastBotUpdate(req.params.id, bot);
+    res.json({ success: true, message: paused ? '已暂停' : '已恢复', paused });
 }));
 
 app.post("/api/bots/:id/set-timer", apiErrorHandler(async (req, res) => {
@@ -1195,7 +1250,13 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     if (fsSync.existsSync(CONFIG_FILE)) {
         try {
             const saved = JSON.parse(fsSync.readFileSync(CONFIG_FILE));
-            saved.forEach(b => createSmartBot('bot_'+Math.random().toString(36).substr(2,5), b.host, b.port, b.username, b.logs || [], b.settings));
+            saved.forEach(b => {
+                const settings = b.settings || {};
+                // 行为开关不跨进程恢复: 自主行走/自动聊天/自动挖矿启动后一律关闭, 防止开机自动挖矿
+                // (paused 与 note、重启排程等仍保留)
+                settings.walk = false; settings.chat = false; settings.mine = false;
+                createSmartBot('bot_'+Math.random().toString(36).substr(2,5), b.host, b.port, b.username, b.logs || [], settings);
+            });
         } catch (e) {}
     }
 
@@ -1264,6 +1325,7 @@ wss.on('connection', (ws) => {
                     host: bot.targetHost,
                     port: bot.targetPort,
                     status: bot.status,
+                    paused: !!bot.paused,
                     logs: bot.logs,
                     settings: bot.settings,
                     nextRestart: bot.settings.restartInterval > 0 ? new Date(bot.lastRestartTick + bot.settings.restartInterval * 60000).toLocaleTimeString() : '未开启'

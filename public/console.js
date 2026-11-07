@@ -134,7 +134,11 @@ createApp({
       catch (e) { this.say(e.message, true); }
     },
     async act(b, action) {
-      try { await this.api('/api/bots/' + b.id + '/' + action, { method: 'POST' }); this.say(action === 'reconnect' ? '重新連線指令已送出' : '重啟指令已送出'); }
+      try {
+        await this.api('/api/bots/' + b.id + '/' + action, { method: 'POST', body: JSON.stringify({ paused: action === 'pause' ? !b.paused : undefined }) });
+        this.say(action === 'reconnect' ? '重新連線指令已送出' : action === 'pause' ? (b.paused ? '恢復指令已送出' : '暫停指令已送出') : '重啟指令已送出');
+        if (action === 'pause') b.paused = !b.paused;
+      }
       catch (e) { this.say(e.message, true); }
     },
     async toggle(b, type, event) {
