@@ -292,6 +292,25 @@ async function getMemoryLimit() {
     return cachedMemoryLimit;
 }
 
+let lastCpuSample = null;
+// 进程 CPU 占用: cpuUsage 差分 / 墙钟时间, 按核数归一到 0-100 (与常见监控面板口径一致)
+function getCpuPercent() {
+    const now = process.cpuUsage();
+    const t = Date.now();
+    if (lastCpuSample) {
+        const elapsedMs = t - lastCpuSample.t;
+        if (elapsedMs > 0) {
+            const cpuMs = ((now.user - lastCpuSample.u) + (now.system - lastCpuSample.s)) / 1000;
+            const cores = os.cpus().length || 1;
+            lastCpuSample = { u: now.user, s: now.system, t };
+            return Math.min(999, cpuMs / (elapsedMs * cores) * 100).toFixed(1);
+        }
+        return null;
+    }
+    lastCpuSample = { u: now.user, s: now.system, t };
+    return null; // 首次无采样基线, 下次请求起有值
+}
+
 function getMemoryStatus() {
     const usage = process.memoryUsage();
     const used = usage.rss;
@@ -305,6 +324,7 @@ function getMemoryStatus() {
         used: (used / 1024 / 1024).toFixed(1),
         total: (total / 1024 / 1024).toFixed(0),
         percent,
+        cpu: getCpuPercent() || '0.0',
         heapUsed,
         heapTotal,
         heapPercent,

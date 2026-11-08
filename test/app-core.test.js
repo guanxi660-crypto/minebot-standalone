@@ -65,11 +65,13 @@ test('validateTimer: min/hour 換算為分鐘，0-10080 邊界', () => {
     assert.strictEqual(A.validateTimer('167', 'hour').ok, true);
 });
 
-test('fmtMem: percent 字串轉數字 + 條色階', () => {
+test('fmtMem: percent 字串轉數字 + 條色階 + cpu 透傳', () => {
     assert.strictEqual(A.fmtMem({ used: '1024', total: '4096', percent: '25' }).percentNum, 25);
     assert.strictEqual(A.fmtMem({ percent: '65' }).barCls, 'bg-emerald-500');
     assert.strictEqual(A.fmtMem({ percent: '80' }).barCls, 'bg-amber-500');
     assert.strictEqual(A.fmtMem({ percent: '95' }).barCls, 'bg-red-500');
+    assert.strictEqual(A.fmtMem({ used: '1024', total: '4096', percent: '25', cpu: '3.2' }).cpuNum, '3.2');
+    assert.strictEqual(A.fmtMem({ used: '1024', total: '4096', percent: '25' }).cpuNum, '0.0'); // 舊後端無 cpu 欄位
 });
 
 test('console.css: 保留預設暗色，亮色使用獨立主題變數', () => {

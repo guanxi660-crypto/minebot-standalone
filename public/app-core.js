@@ -85,14 +85,15 @@
         return { ok: true, value: min };
     }
 
-    // L102 — 記憶體視圖
+    // L102 — 記憶體視圖（含 CPU 占用透傳）
     function fmtMem(m) {
         m = m || {};
         const p = Math.round(parseFloat(m.percent) || 0);
         const barCls = p < 70 ? 'bg-emerald-500' : p < 90 ? 'bg-amber-500' : 'bg-red-500';
         const usedGb = (parseFloat(m.used) / 1024).toFixed(1);
         const totalGb = (parseFloat(m.total) / 1024).toFixed(1);
-        return { percentNum: p, barCls, usedGb, totalGb };
+        const cpuNum = (parseFloat(m.cpu) || 0).toFixed(1);
+        return { percentNum: p, barCls, usedGb, totalGb, cpuNum };
     }
 
     return { esc, vmBot, logLine, validatePto, validateNewBot, validateTimer, fmtMem };
