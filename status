@@ -550,6 +550,12 @@ async function startStatus() {
             // 打开状态上报流
             stateStream = client.ReportSystemState(metadata);
             log('[Status] ReportSystemState stream connected');
+            // 常驻 error 监听: 回执窗口外( 测速/GeoIP/sleep 期间 )流断开不会变 uncaughtException,
+            // 只标记重连。与 node-ws 部署版的 "error 监听只挂窗口内" 崩溃 bug 同源, 此处根治。
+            stateStream.on('error', (err) => {
+                logErr('[Status] state stream error:', err.message);
+                workerCancelled = true;
+            });
 
             while (!workerCancelled) {
                 try {
