@@ -44,7 +44,6 @@ if [ ! -f .env ]; then
     if [ -f .env.sample ]; then
         cp .env.sample .env
         echo -e "${YELLOW}⚠ 已从 .env.sample 创建 .env 文件，请根据实际情况修改${NC}"
-        echo -e "${YELLOW}  (代理/监控模块的配置请直接编辑 core 与 status 文件)${NC}"
     else
         echo -e "${YELLOW}⚠ 未找到 .env.sample，跳过${NC}"
     fi
@@ -75,7 +74,7 @@ fi
 
 echo ""
 echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN}   MineCraft Bot Assistant 部署完成!${NC}"
+echo -e "${GREEN}   MineCraft Bot Assistant (dev) 部署完成!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo -e "  ${CYAN}Web 面板:${NC} http://<服务器IP>:${PORT:-4681}"

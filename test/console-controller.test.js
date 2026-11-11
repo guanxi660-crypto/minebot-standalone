@@ -79,32 +79,6 @@ test('poll: 登出後才抵達的舊請求不能重新填入資料', async () =>
     assert.equal(app.bots.length, 0);
 });
 
-test('coreAction: 已運行回應缺少 status 時重新取得完整狀態', async () => {
-    const actions = [];
-    const { app } = loadConsole(async (path, options) => {
-        const action = JSON.parse(options.body).action;
-        actions.push(action);
-        return action === 'status' ? { success: true, status: 'running', autoEnabled: false, detail: '運行中' }
-            : { success: true, detail: '已經在運行，無需重複開始' };
-    });
-    await app.coreAction('start');
-    assert.equal(app.core.status, 'running');
-    assert.deepEqual(actions, ['start', 'status']);
-    assert.equal(app.busy.core, false);
-});
-
-test('coreAction: 登出後的啟動回應不能恢復舊狀態或通知', async () => {
-    let resolve;
-    const { app } = loadConsole(() => new Promise(r => { resolve = r; }));
-    const pending = app.coreAction('start');
-    app.logout();
-    resolve({ success: true, status: 'running', detail: '運行中' });
-    await pending;
-    assert.equal(app.core.status, 'unknown');
-    assert.equal(app.toast.msg, '');
-    assert.equal(app.busy.core, false);
-});
-
 test('navigation: 直接開啟編碼網址只選出指定機器人，保留原始草稿物件', () => {
     const id = 'bot /中文#';
     const { app } = loadConsole(undefined, '#/bots/' + encodeURIComponent(id));

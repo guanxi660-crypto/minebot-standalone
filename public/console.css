@@ -136,11 +136,6 @@ nav a:hover { color:var(--accent); }
 .system-panel dl { margin:18px 0 24px; font-size:12px; }
 .system-panel dl>div { display:flex; justify-content:space-between; gap:12px; padding:7px 0; }
 dt { color:var(--sub); } dd { margin:0; }
-.core-section { border-top:1px solid var(--line); padding-top:20px; }
-.core-section h3 { font-size:13px; }
-.core-section p { font-size:12px; margin:10px 0 16px; }
-.core-state { display:flex; align-items:center; gap:6px; }
-.core-detail { color:var(--sub); overflow-wrap:anywhere; }
 .sidebar-note { border-top:1px solid var(--line); padding-top:20px; margin:28px 4px 0; font-size:12px; color:var(--sub); line-height:1.9; }
 .workspace-footer { max-width:1320px; margin:auto; padding:20px 0; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:20px; color:var(--sub); font-size:12px; }
 .workspace-footer>span:first-child { font-weight:600; }

@@ -4,9 +4,9 @@ createApp({
   data() {
     return {
       token: localStorage.getItem('mb_token') || '', lf: { username: '', password: '' }, af: { host: '', username: '' },
-      loginErr: '', afErr: '', bots: [], sys: null, core: { status: 'unknown', detail: '' },
-      loading: true, loaded: false, polling: false, pollError: '', systemError: '', coreError: '',
-      busy: { login: false, add: false, core: false }, toast: { msg: '', err: false },
+      loginErr: '', afErr: '', bots: [], sys: null,
+      loading: true, loaded: false, polling: false, pollError: '', systemError: '',
+      busy: { login: false, add: false }, toast: { msg: '', err: false },
       timers: [], toastTimer: null, session: 0, route: window.location.hash, preferences: UI_PREFS.read(localStorage),
       modes: [{ id: 'ai', name: 'AI 視角', detail: '注視附近玩家' }, { id: 'walk', name: '自主行走', detail: '隨機巡邏' }, { id: 'chat', name: '自動聊天', detail: '定時發送訊息' }, { id: 'mine', name: '自動挖礦', detail: '挖掘鄰近方塊' }]
     };
@@ -19,8 +19,7 @@ createApp({
       try { return decodeURIComponent(id); } catch { return id; }
     },
     detailViews() { return this.selectedBotId ? this.botViews.filter(b => b.raw.id === this.selectedBotId) : []; },
-    onlineCount() { return this.botViews.filter(b => b.view.online).length; },
-    coreLabel() { return this.t({ running: '運行中', starting: '啟動中', stopped: '已停止', unknown: '尚未取得' }[this.core.status] || this.core.status); }
+    onlineCount() { return this.botViews.filter(b => b.view.online).length; }
   },
   methods: {
     t(text, params) { return UI_PREFS.translate(this.preferences.locale, text, params); },
@@ -49,8 +48,8 @@ createApp({
     },
     startPolling() {
       this.timers.forEach(clearInterval);
-      this.poll(); this.pollCore();
-      this.timers = [setInterval(() => this.poll(), 5000), setInterval(() => this.pollCore(), 30000)];
+      this.poll();
+      this.timers = [setInterval(() => this.poll(), 5000)];
     },
     async login() {
       this.busy.login = true; this.loginErr = '';
@@ -65,10 +64,9 @@ createApp({
     logout() {
       this.timers.forEach(clearInterval); this.timers = []; clearTimeout(this.toastTimer);
       this.session++; this.token = ''; localStorage.removeItem('mb_token');
-      this.bots = []; this.sys = null; this.core = { status: 'unknown', detail: '' };
+      this.bots = []; this.sys = null;
       this.loaded = false; this.loading = true; this.polling = false;
-      this.busy.core = false;
-      this.pollError = ''; this.systemError = ''; this.coreError = ''; this.toast.msg = '';
+      this.pollError = ''; this.systemError = ''; this.toast.msg = '';
     },
     async poll() {
       if (!this.token || this.polling) return;
@@ -92,28 +90,6 @@ createApp({
         } catch (e) { if (session === this.session) this.systemError = e.message; }
       } catch (e) { if (session === this.session) this.pollError = e.message; }
       finally { if (session === this.session) { this.loading = false; this.polling = false; } }
-    },
-    async pollCore() {
-      if (!this.token || this.busy.core) return;
-      const session = this.session;
-      try {
-        const core = await this.api('/api/core', { method: 'POST', body: JSON.stringify({ action: 'status' }) });
-        if (session === this.session) { this.core = core; this.coreError = ''; }
-      } catch (e) { if (session === this.session) this.coreError = e.message; }
-    },
-    async coreAction(action) {
-      if (!this.token || this.busy.core) return;
-      const session = this.session;
-      this.busy.core = true; this.coreError = '';
-      try {
-        let core = await this.api('/api/core', { method: 'POST', body: JSON.stringify({ action }) });
-        if (session !== this.session) return;
-        if (!core.status) core = await this.api('/api/core', { method: 'POST', body: JSON.stringify({ action: 'status' }) });
-        if (session !== this.session) return;
-        this.core = core;
-        this.say(action === 'start' ? '核心服務啟動指令已送出' : '核心服務已停止');
-      } catch (e) { if (session === this.session) this.coreError = e.message; }
-      finally { if (session === this.session) this.busy.core = false; }
     },
     async addBot() {
       const v = APP.validateNewBot(this.af);

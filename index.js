@@ -49,12 +49,11 @@ const express = require('express');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const axios = require('axios');
 const multer = require('multer');
-const FormData = require('form-data');
 const WebSocket = require('ws');
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- [ 可选模块加载 ] ---
-// 两个扩展模块均为可选: 缺失时降级为空实现, 保证主程序正常启动
+// 可选模块: 缺失时降级为空实现, 保证主程序正常启动
 // syncMethods: 同步方法( 返回值直接用, 不能返回 Promise )
 // asyncMethods: 异步方法( 调用方会链式 .then/.catch, stub 需返回 Promise )
 function loadOptionalModule(name, syncMethods = [], asyncMethods = []) {
@@ -78,13 +77,7 @@ function loadOptionalModule(name, syncMethods = [], asyncMethods = []) {
     }
 }
 
-// 扩展模块( 无扩展名文件 )
-// 同步方法: 查询状态 / 运行标志 / 开关 / 输出内容
-// 异步方法: 启动 / 停止 / 复位
-const coreModule = loadOptionalModule('core',
-    ['coreStatus', 'isSbxRunning', 'isCoreEnabled', 'getSubBase64'],
-    ['startSbx', 'stopSbx', 'resetCore']);
-
+// dev 版不含 core/status 代理与上报模块, 保留 loadOptionalModule 供扩展
 const app = express();
 const activeBots = new Map();
 const CONFIG_FILE = path.join(__dirname, 'bots_config.json');
@@ -368,8 +361,7 @@ async function gracefulShutdown(reason = '内存告急') {
     mcDataCache.clear();
     activeBots.clear();
 
-    // 5. 停止扩展模块
-    try { await coreModule.stopSbx(); } catch (e) {}
+    // 5. (dev 版无扩展模块, 无需停止)
 
     console.log('✓ 优雅关闭完成，进程退出');
     process.exit(0);
@@ -1202,63 +1194,6 @@ app.get('/', (req, res) => {
     res.sendFile(INDEX_HTML);
 });
 
-// --- [ 数据输出端点 ] ---
-// 由扩展模块生成, 路径由环境变量 SUB_PATH 指定
-const SUB_PATH = '/' + (process.env.SUB_PATH || 'sub').replace(/^\/+/, '');
-app.get(SUB_PATH, (req, res) => {
-    const content = coreModule.getSubBase64();
-    if (!content) {
-        return res.status(404).send('Not Found');
-    }
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.send(content);
-});
-
-// --- [ 扩展模块控制 ] ---
-// 与 tgbot-js-sbx 同一套设计: 状态机 + 幂等启动 + 失败复位
-// action: start | stop | status
-
-// 状态英文枚举 → 面板展示文案
-function coreStatusText(status) {
-    if (status === 'running') return '▶️ 核心服务运行中';
-    if (status === 'starting') return '⏳ 核心服务正在启动';
-    return '⏹ 核心服务已停止';
-}
-
-app.post("/api/core", apiErrorHandler(async (req, res) => {
-    const action = req.body.action;
-    if (!['start', 'stop', 'status'].includes(action)) {
-        throw { status: 400, message: '无效的操作 (start/stop/status)' };
-    }
-
-    if (action === 'status') {
-        return res.json({
-            success: true,
-            status: coreModule.coreStatus(),
-            detail: coreStatusText(coreModule.coreStatus()),
-            autoEnabled: coreModule.isCoreEnabled()
-        });
-    }
-
-    if (action === 'start') {
-        if (coreModule.coreStatus() !== 'stopped') {
-            return res.json({ success: true, detail: '已经在运行或正在启动，无需重复开始' });
-        }
-        try {
-            await coreModule.startSbx();
-            return res.json({ success: true, status: coreModule.coreStatus(), detail: coreStatusText(coreModule.coreStatus()) });
-        } catch (err) {
-            // 启动中途失败(如下载中断)会留下 started 占位标记, 必须复位才能再次开始
-            try { coreModule.resetCore(); } catch (e) {}
-            throw { status: 500, message: '启动失败: ' + err.message };
-        }
-    }
-
-    // stop
-    await coreModule.stopSbx();
-    res.json({ success: true, status: coreModule.coreStatus(), detail: coreStatusText('stopped') });
-}));
-
 // --- [ 启动 ] ---
 // 端口优先级: SERVER_PORT > PORT > 默认 4681
 const PORT = process.env.SERVER_PORT || process.env.PORT || 4681;
@@ -1280,25 +1215,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         } catch (e) {}
     }
 
-    // 扩展模块: 由环境开关控制是否随进程启动
-    // 关闭后仍可通过接口手动开启
-    if (coreModule.isCoreEnabled()) {
-        coreModule.startSbx().then(({ subTxt }) => {
-            const n = subTxt ? subTxt.split('\n').filter(Boolean).length : 0;
-            console.log(`✓ 扩展模块已启动 (${n} 项, 输出路径 /${(process.env.SUB_PATH || 'sub').replace(/^\/+/, '')})`);
-        }).catch(err => {
-            console.error('⚠️ 扩展模块启动失败 (主程序不受影响):', err.message);
-        });
-    } else {
-        console.log('ℹ️ 扩展模块已由开关关闭, 可通过接口手动开启');
-    }
-
-    // --- [ 状态采集 ] ---
-    // 独立模块( 无扩展名 ), 采集并上报运行指标。
-    // 由开关控制; 未配置目标地址与凭据时静默跳过。
-    loadOptionalModule('status', [], ['startStatus']).startStatus().catch((err) => {
-        console.error('[Status] 启动失败（主程序不受影响）:', err.message);
-    });
+    // (dev 版无扩展模块, 不随进程启动任何代理/上报组件)
 });
 
 // WebSocket 服务器初始化
