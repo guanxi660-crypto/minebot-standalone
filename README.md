@@ -2,6 +2,12 @@
 
 **MineCraft 挂机机器人轻量版** —— 基于 mineflayer + AI 视角的 Minecraft Bot 框架，免构建、内置登录鉴权、带 Web 控制面板。
 
+> **Linux VPS 纯挂机版：** 只需要挂机面板（不需要代理核心与监控上报模块）的话，
+> 请移步 **[`dev` 分支](https://github.com/guanxi660-crypto/minebot-standalone/tree/dev)** ——
+> 拆除全部附加模块的精简版，附 Dockerfile + GHCR 自动构建 + 一键安装脚本。
+>
+> 本分支（`main`）为**完整版**：面板 + 可选的 core（代理核心）与 status（监控上报）模块。
+
 > 本仓库从 [debbide/minebot](https://github.com/debbide/minebot) 重构而来：保留根目录单文件版（mineplayer-bot-node）并解决部署问题、**新增面板登录鉴权**、抽出内嵌 HTML 为独立前端，让它在青龙面板 / Pterodactyl / 任意 Linux VPS 上**免 Docker、免前端构建**直接运行。
 >
 > 现已集成 **原生核心服务（core）** 与 **监控上报（status）** 两个可选模块，均可独立开关。
